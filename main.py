@@ -3,9 +3,11 @@ kitty-bot — Python Discord bot
 Moderation + Music (via Lavalink) + Utility + Fun
 """
 import os
+import json
 import random
 import asyncio
 import datetime as dt
+from pathlib import Path
 from typing import Optional
 
 import discord
@@ -24,12 +26,24 @@ PINK = 0xff66cc
 
 intents = discord.Intents.all()
 
+PLAYLIST_FILE = Path("playlists.json")
+
+def load_playlists() -> dict:
+    if PLAYLIST_FILE.exists():
+        try: return json.loads(PLAYLIST_FILE.read_text())
+        except: return {}
+    return {}
+
+def save_playlists(data: dict):
+    PLAYLIST_FILE.write_text(json.dumps(data, indent=2))
+
 class KittyBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix=PREFIX, intents=intents, help_command=None)
         self.snipes: dict[int, discord.Message] = {}
         self.edit_snipes: dict[int, tuple[discord.Message, discord.Message]] = {}
         self.afk: dict[int, tuple[str, dt.datetime]] = {}
+        self.playlists = load_playlists()  # {user_id_str: {playlist_name: [urls...]}}
 
     async def setup_hook(self):
         # Prefer env-provided node, but always include serenetia (known working) as backup
@@ -90,6 +104,16 @@ async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload):
     player: wavelink.Player = payload.player
     if not player:
         return
+    # Push ended track to history for the back button
+    history = getattr(player, "history_list", None)
+    if history is None:
+        history = []
+        player.history_list = history
+    if payload.track:
+        history.append(payload.track)
+        # Keep last 50 only
+        if len(history) > 50:
+            history.pop(0)
     try:
         if player.queue:
             next_track = player.queue.get()
@@ -132,6 +156,18 @@ class MusicControls(discord.ui.View):
                 await interaction.message.edit(embed=make_now_playing_embed(self.player), view=self)
             except Exception as e:
                 print(f"display update failed: {e}")
+
+    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.secondary, row=0)
+    async def back_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        history = getattr(self.player, "history_list", [])
+        if not history:
+            return await interaction.response.send_message("no previous track in history.", ephemeral=True)
+        prev = history.pop()
+        # Put current track back at front of queue, then play the previous
+        if self.player.current:
+            self.player.queue.put_at(0, self.player.current)
+        await interaction.response.defer()
+        await self.player.play(prev)
 
     @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.primary, row=0)
     async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -767,6 +803,162 @@ async def slash_leave(interaction: discord.Interaction):
         return await interaction.response.send_message("i'm not in voice.")
     await player.disconnect()
     await interaction.response.send_message("👋 left voice.")
+
+# ===== Playlist slash commands =====
+
+playlist_group = app_commands.Group(name="playlist", description="Manage your personal playlists")
+
+@playlist_group.command(name="create", description="Create a new empty playlist")
+@app_commands.describe(name="Playlist name")
+async def pl_create(interaction: discord.Interaction, name: str):
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.setdefault(uid, {})
+    if name in user_pls:
+        return await interaction.response.send_message(f"playlist **{name}** already exists.", ephemeral=True)
+    user_pls[name] = []
+    save_playlists(bot.playlists)
+    await interaction.response.send_message(f"✅ created playlist **{name}**.", ephemeral=True)
+
+@playlist_group.command(name="add", description="Add a track (URL or search) to a playlist")
+@app_commands.describe(name="Playlist name", query="URL or search terms")
+async def pl_add(interaction: discord.Interaction, name: str, query: str):
+    await interaction.response.defer(ephemeral=True)
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.get(uid, {})
+    if name not in user_pls:
+        user_pls = bot.playlists.setdefault(uid, {})
+        user_pls[name] = []
+    try:
+        tracks = await wavelink.Playable.search(query)
+        if not tracks:
+            return await interaction.followup.send("nothing found.", ephemeral=True)
+        if isinstance(tracks, wavelink.Playlist):
+            added = 0
+            for t in tracks.tracks:
+                user_pls[name].append(t.uri or t.identifier)
+                added += 1
+            save_playlists(bot.playlists)
+            await interaction.followup.send(f"✅ added **{added}** tracks from **{tracks.name}** to **{name}**.", ephemeral=True)
+        else:
+            track = tracks[0]
+            user_pls[name].append(track.uri or track.identifier)
+            save_playlists(bot.playlists)
+            await interaction.followup.send(f"✅ added **{track.title}** to **{name}**.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"💀 add failed: `{e}`", ephemeral=True)
+
+@playlist_group.command(name="play", description="Load one of your playlists into the queue")
+@app_commands.describe(name="Playlist name")
+async def pl_play(interaction: discord.Interaction, name: str):
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.get(uid, {})
+    if name not in user_pls or not user_pls[name]:
+        return await interaction.response.send_message(f"playlist **{name}** is empty or doesn't exist.", ephemeral=True)
+    if not interaction.user.voice:
+        return await interaction.response.send_message("join a voice channel first.", ephemeral=True)
+    await interaction.response.defer()
+
+    channel = interaction.user.voice.channel
+    player: wavelink.Player = interaction.guild.voice_client
+    if not player:
+        player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+    elif player.channel != channel:
+        await player.move_to(channel)
+    player.home_channel = interaction.channel
+
+    added = 0
+    first_track = None
+    for url in user_pls[name]:
+        try:
+            results = await wavelink.Playable.search(url)
+            if not results: continue
+            t = results[0] if not isinstance(results, wavelink.Playlist) else results.tracks[0]
+            if first_track is None and not player.playing:
+                first_track = t
+            else:
+                await player.queue.put_wait(t)
+            added += 1
+        except Exception as e:
+            print(f"pl_play search error for {url}: {e}")
+    if first_track and not player.playing:
+        await player.play(first_track)
+    await interaction.followup.send(f"▶️ loaded **{added}** tracks from **{name}**.")
+
+    if first_track:
+        await asyncio.sleep(1)
+        prev = getattr(player, "now_playing_msg", None)
+        if prev:
+            try: await prev.delete()
+            except: pass
+        try:
+            view = MusicControls(player)
+            msg = await interaction.channel.send(embed=make_now_playing_embed(player), view=view)
+            player.now_playing_msg = msg
+        except: pass
+
+@playlist_group.command(name="list", description="List your playlists")
+async def pl_list(interaction: discord.Interaction):
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.get(uid, {})
+    if not user_pls:
+        return await interaction.response.send_message("you have no playlists. make one with `/playlist create`.", ephemeral=True)
+    lines = [f"**{name}** — {len(tracks)} tracks" for name, tracks in user_pls.items()]
+    await interaction.response.send_message(embed=pink_embed("🎵 Your Playlists", "\n".join(lines)), ephemeral=True)
+
+@playlist_group.command(name="show", description="Show tracks in a playlist")
+@app_commands.describe(name="Playlist name")
+async def pl_show(interaction: discord.Interaction, name: str):
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.get(uid, {})
+    if name not in user_pls:
+        return await interaction.response.send_message(f"no playlist **{name}**.", ephemeral=True)
+    tracks = user_pls[name]
+    if not tracks:
+        return await interaction.response.send_message(f"**{name}** is empty.", ephemeral=True)
+    lines = [f"**{i+1}.** <{t}>" for i, t in enumerate(tracks[:20])]
+    extra = f"\n*…and {len(tracks) - 20} more*" if len(tracks) > 20 else ""
+    await interaction.response.send_message(embed=pink_embed(f"🎵 {name}", "\n".join(lines) + extra), ephemeral=True)
+
+@playlist_group.command(name="remove", description="Remove a track from a playlist (by position)")
+@app_commands.describe(name="Playlist name", position="Track position (1-based)")
+async def pl_remove(interaction: discord.Interaction, name: str, position: int):
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.get(uid, {})
+    if name not in user_pls:
+        return await interaction.response.send_message(f"no playlist **{name}**.", ephemeral=True)
+    if position < 1 or position > len(user_pls[name]):
+        return await interaction.response.send_message("invalid position.", ephemeral=True)
+    removed = user_pls[name].pop(position - 1)
+    save_playlists(bot.playlists)
+    await interaction.response.send_message(f"🗑️ removed track #{position} from **{name}**.", ephemeral=True)
+
+@playlist_group.command(name="delete", description="Delete a playlist")
+@app_commands.describe(name="Playlist name")
+async def pl_delete(interaction: discord.Interaction, name: str):
+    uid = str(interaction.user.id)
+    user_pls = bot.playlists.get(uid, {})
+    if name not in user_pls:
+        return await interaction.response.send_message(f"no playlist **{name}**.", ephemeral=True)
+    del user_pls[name]
+    save_playlists(bot.playlists)
+    await interaction.response.send_message(f"🗑️ deleted playlist **{name}**.", ephemeral=True)
+
+bot.tree.add_command(playlist_group)
+
+# Standalone /back slash command
+@bot.tree.command(name="back", description="Play the previous track")
+async def slash_back(interaction: discord.Interaction):
+    player: wavelink.Player = interaction.guild.voice_client
+    if not player:
+        return await interaction.response.send_message("nothing playing.")
+    history = getattr(player, "history_list", [])
+    if not history:
+        return await interaction.response.send_message("no previous track.")
+    prev = history.pop()
+    if player.current:
+        player.queue.put_at(0, player.current)
+    await player.play(prev)
+    await interaction.response.send_message(f"⏮️ going back to **{prev.title}**")
 
 @bot.tree.command(name="queue", description="Show the queue")
 async def slash_queue(interaction: discord.Interaction):
