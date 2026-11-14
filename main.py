@@ -693,22 +693,35 @@ async def slash_play(interaction: discord.Interaction, query: str):
         tracks: wavelink.Search = await wavelink.Playable.search(query)
         if not tracks:
             return await interaction.followup.send("nothing found.")
+        started_new = False
         if isinstance(tracks, wavelink.Playlist):
             added = await player.queue.put_wait(tracks)
             await interaction.followup.send(f"✅ queued **{added}** tracks from **{tracks.name}**")
             if not player.playing:
-                next_t = player.queue.get()
-                print(f"[slash_play] starting {next_t.title}")
-                await player.play(next_t)
+                await player.play(player.queue.get())
+                started_new = True
         else:
             track = tracks[0]
             if not player.playing:
-                print(f"[slash_play] starting {track.title} immediately")
                 await interaction.followup.send(f"▶️ playing **{track.title}**")
                 await player.play(track)
+                started_new = True
             else:
                 await player.queue.put_wait(track)
                 await interaction.followup.send(f"✅ queued **{track.title}**")
+        # Send the UI directly — don't rely on track_start event
+        if started_new:
+            await asyncio.sleep(1)  # let Lavalink register the track
+            prev = getattr(player, "now_playing_msg", None)
+            if prev:
+                try: await prev.delete()
+                except: pass
+            try:
+                view = MusicControls(player)
+                msg = await interaction.channel.send(embed=make_now_playing_embed(player), view=view)
+                player.now_playing_msg = msg
+            except Exception as e:
+                print(f"[slash_play] UI send failed: {e}")
     except Exception as e:
         print(f"[slash_play] error: {e}")
         await interaction.followup.send(f"💀 play failed: `{e}`")
