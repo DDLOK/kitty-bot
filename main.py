@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
 GUILD_ID = int(os.environ["GUILD_ID"]) if os.environ.get("GUILD_ID") else None
-LAVALINK_URI = os.environ.get("LAVALINK_URI", "https://lava-v4.ajieblogs.eu.org:443")
+LAVALINK_URI = os.environ.get("LAVALINK_URI", "https://lavalinkv4.serenetia.com:443")
 LAVALINK_PASSWORD = os.environ.get("LAVALINK_PASSWORD", "https://dsc.gg/ajidevserver")
 PREFIX = "]"
 PINK = 0xff66cc
@@ -32,16 +32,16 @@ class KittyBot(commands.Bot):
         self.afk: dict[int, tuple[str, dt.datetime]] = {}
 
     async def setup_hook(self):
-        # Connect to multiple Lavalink nodes with fallback
-        nodes = [
-            wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD),
-            # Backup public nodes — if the primary dies, wavelink routes to these
-            wavelink.Node(uri="https://lavalinkv4.serenetia.com:443", password="https://dsc.gg/ajidevserver"),
-            wavelink.Node(uri="https://lavahatry4.techbyte.host:443", password="NAIGLAVA-dash.techbyte.host"),
-        ]
+        # Prefer env-provided node, but always include serenetia (known working) as backup
+        nodes = [wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD)]
+        if LAVALINK_URI != "https://lavalinkv4.serenetia.com:443":
+            nodes.append(wavelink.Node(
+                uri="https://lavalinkv4.serenetia.com:443",
+                password="https://dsc.gg/ajidevserver",
+            ))
         try:
             await wavelink.Pool.connect(nodes=nodes, client=self, cache_capacity=100)
-            print(f"Connecting to {len(nodes)} Lavalink nodes...")
+            print(f"Connecting to {len(nodes)} Lavalink node(s)...")
         except Exception as e:
             print(f"Lavalink connect failed: {e}")
         # Register slash commands
