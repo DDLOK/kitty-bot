@@ -96,17 +96,116 @@ async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload):
     except Exception as e:
         print(f"track end error: {e}")
 
+def make_progress_bar(position: int, length: int, size: int = 15) -> str:
+    """Return a progress bar like '0:42 ▬▬▬🔘▬▬▬▬ 3:21'"""
+    if not length:
+        return "`🔴 LIVE`"
+    pct = min(1.0, position / length)
+    filled = int(pct * size)
+    bar = "▬" * filled + "🔘" + "▬" * (size - filled - 1)
+    return f"`{fmt_duration(position)}` {bar} `{fmt_duration(length)}`"
+
+def make_now_playing_embed(player: wavelink.Player) -> discord.Embed:
+    t = player.current
+    e = pink_embed("🎶 Now Playing")
+    e.description = f"### [{t.title}]({t.uri or ''})\n**{t.author}**\n\n{make_progress_bar(player.position, t.length)}"
+    if t.artwork:
+        e.set_thumbnail(url=t.artwork)
+    # Footer with mode + volume
+    loop_mode = "🔁" if player.queue.mode == wavelink.QueueMode.loop_all else ("🔂" if player.queue.mode == wavelink.QueueMode.loop else "")
+    e.set_footer(text=f"vol {player.volume}% • queue: {len(player.queue)} {loop_mode}")
+    return e
+
+class MusicControls(discord.ui.View):
+    def __init__(self, player: wavelink.Player):
+        super().__init__(timeout=None)
+        self.player = player
+
+    async def _refresh(self, interaction: discord.Interaction):
+        if self.player.current:
+            try:
+                await interaction.message.edit(embed=make_now_playing_embed(self.player), view=self)
+            except: pass
+
+    @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.primary, row=0)
+    async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.player.pause(not self.player.paused)
+        await interaction.response.defer()
+        await self._refresh(interaction)
+
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.player.skip(force=True)
+        await interaction.response.send_message("⏭️ skipped.", ephemeral=True)
+
+    @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, row=0)
+    async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.player.queue.clear()
+        await self.player.disconnect()
+        for item in self.children: item.disabled = True
+        await interaction.response.edit_message(view=self)
+        await interaction.followup.send("⏹️ stopped.", ephemeral=True)
+
+    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary, row=0)
+    async def loop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.player.queue.mode == wavelink.QueueMode.loop_all:
+            self.player.queue.mode = wavelink.QueueMode.normal
+        else:
+            self.player.queue.mode = wavelink.QueueMode.loop_all
+        await interaction.response.defer()
+        await self._refresh(interaction)
+
+    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=0)
+    async def shuffle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if len(self.player.queue) >= 2:
+            self.player.queue.shuffle()
+        await interaction.response.defer()
+        await self._refresh(interaction)
+
+    @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.secondary, row=1)
+    async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new = max(0, self.player.volume - 10)
+        await self.player.set_volume(new)
+        await interaction.response.defer()
+        await self._refresh(interaction)
+
+    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, row=1)
+    async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new = min(200, self.player.volume + 10)
+        await self.player.set_volume(new)
+        await interaction.response.defer()
+        await self._refresh(interaction)
+
+    @discord.ui.button(emoji="📋", label="Queue", style=discord.ButtonStyle.secondary, row=1)
+    async def queue_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.player.queue:
+            return await interaction.response.send_message("queue empty.", ephemeral=True)
+        lines = [f"**{i}.** {t.title}" for i, t in enumerate(list(self.player.queue)[:15], start=1)]
+        extra = f"\n*…and {len(self.player.queue) - 15} more*" if len(self.player.queue) > 15 else ""
+        await interaction.response.send_message(embed=pink_embed("📋 Queue", "\n".join(lines) + extra), ephemeral=True)
+
+    @discord.ui.button(emoji="🔄", label="Refresh", style=discord.ButtonStyle.secondary, row=1)
+    async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self._refresh(interaction)
+
 @bot.event
 async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
     player: wavelink.Player = payload.player
-    track: wavelink.Playable = payload.track
     channel = getattr(player, "home_channel", None)
-    if channel:
-        e = pink_embed("🎶 now playing", f"**{track.title}**\nby {track.author} — `{fmt_duration(track.length)}`")
-        if track.artwork:
-            e.set_thumbnail(url=track.artwork)
-        try: await channel.send(embed=e)
+    if not channel:
+        return
+    # Delete the previous now-playing message if any
+    prev = getattr(player, "now_playing_msg", None)
+    if prev:
+        try: await prev.delete()
         except: pass
+    try:
+        view = MusicControls(player)
+        msg = await channel.send(embed=make_now_playing_embed(player), view=view)
+        player.now_playing_msg = msg
+    except Exception as e:
+        print(f"now-playing send failed: {e}")
 
 @bot.event
 async def on_message_delete(msg: discord.Message):
