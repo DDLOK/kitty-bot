@@ -32,11 +32,16 @@ class KittyBot(commands.Bot):
         self.afk: dict[int, tuple[str, dt.datetime]] = {}
 
     async def setup_hook(self):
-        # Connect to Lavalink
+        # Connect to multiple Lavalink nodes with fallback
+        nodes = [
+            wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD),
+            # Backup public nodes — if the primary dies, wavelink routes to these
+            wavelink.Node(uri="https://lavalinkv4.serenetia.com:443", password="https://dsc.gg/ajidevserver"),
+            wavelink.Node(uri="https://lavahatry4.techbyte.host:443", password="NAIGLAVA-dash.techbyte.host"),
+        ]
         try:
-            node = wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD)
-            await wavelink.Pool.connect(nodes=[node], client=self, cache_capacity=100)
-            print(f"Connecting to Lavalink at {LAVALINK_URI}...")
+            await wavelink.Pool.connect(nodes=nodes, client=self, cache_capacity=100)
+            print(f"Connecting to {len(nodes)} Lavalink nodes...")
         except Exception as e:
             print(f"Lavalink connect failed: {e}")
         # Register slash commands
@@ -121,25 +126,26 @@ class MusicControls(discord.ui.View):
         super().__init__(timeout=None)
         self.player = player
 
-    async def _refresh(self, interaction: discord.Interaction):
+    async def update_display(self, interaction: discord.Interaction):
         if self.player.current:
             try:
                 await interaction.message.edit(embed=make_now_playing_embed(self.player), view=self)
-            except: pass
+            except Exception as e:
+                print(f"display update failed: {e}")
 
     @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.primary, row=0)
     async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.player.pause(not self.player.paused)
         await interaction.response.defer()
-        await self._refresh(interaction)
+        await self.update_display(interaction)
 
     @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
-    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.player.skip(force=True)
         await interaction.response.send_message("⏭️ skipped.", ephemeral=True)
 
     @discord.ui.button(emoji="⏹️", style=discord.ButtonStyle.danger, row=0)
-    async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.player.queue.clear()
         await self.player.disconnect()
         for item in self.children: item.disabled = True
@@ -153,28 +159,28 @@ class MusicControls(discord.ui.View):
         else:
             self.player.queue.mode = wavelink.QueueMode.loop_all
         await interaction.response.defer()
-        await self._refresh(interaction)
+        await self.update_display(interaction)
 
     @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=0)
     async def shuffle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if len(self.player.queue) >= 2:
             self.player.queue.shuffle()
         await interaction.response.defer()
-        await self._refresh(interaction)
+        await self.update_display(interaction)
 
     @discord.ui.button(emoji="🔉", style=discord.ButtonStyle.secondary, row=1)
     async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
         new = max(0, self.player.volume - 10)
         await self.player.set_volume(new)
         await interaction.response.defer()
-        await self._refresh(interaction)
+        await self.update_display(interaction)
 
     @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.secondary, row=1)
     async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
         new = min(200, self.player.volume + 10)
         await self.player.set_volume(new)
         await interaction.response.defer()
-        await self._refresh(interaction)
+        await self.update_display(interaction)
 
     @discord.ui.button(emoji="📋", label="Queue", style=discord.ButtonStyle.secondary, row=1)
     async def queue_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -187,7 +193,7 @@ class MusicControls(discord.ui.View):
     @discord.ui.button(emoji="🔄", label="Refresh", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self._refresh(interaction)
+        await self.update_display(interaction)
 
 @bot.event
 async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
