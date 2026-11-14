@@ -7,9 +7,12 @@ import json
 import random
 import asyncio
 import datetime as dt
+import re
+import base64 as b64lib
 from pathlib import Path
 from typing import Optional
 
+import aiohttp
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -963,7 +966,744 @@ async def slash_queue(interaction: discord.Interaction):
         lines.append(f"**{i}.** {t.title}")
     await interaction.response.send_message(embed=pink_embed("📋 queue", "\n".join(lines)))
 
+# =============== HTTP HELPER ===============
+
+async def fetch_json(url: str, headers: dict = None):
+    async with aiohttp.ClientSession(headers=headers or {}) as s:
+        async with s.get(url) as r:
+            r.raise_for_status()
+            return await r.json()
+
+async def fetch_text(url: str, headers: dict = None):
+    async with aiohttp.ClientSession(headers=headers or {}) as s:
+        async with s.get(url) as r:
+            return await r.text()
+
+# =============== MORE MODERATION ===============
+
+@bot.command(name="softban")
+@commands.has_permissions(ban_members=True)
+@commands.bot_has_permissions(ban_members=True)
+async def softban(ctx, member: discord.Member, *, reason: str = "softban"):
+    await member.ban(reason=reason, delete_message_days=7)
+    await ctx.guild.unban(member, reason="softban-complete")
+    await ok(ctx, f"🧼 softbanned **{member}** — mess cleaned.")
+
+@bot.command(name="hide")
+@commands.has_permissions(manage_channels=True)
+@commands.bot_has_permissions(manage_channels=True)
+async def hide(ctx):
+    await ctx.channel.set_permissions(ctx.guild.default_role, view_channel=False)
+    await ok(ctx, "🙈 hidden.")
+
+@bot.command(name="unhide", aliases=["show"])
+@commands.has_permissions(manage_channels=True)
+@commands.bot_has_permissions(manage_channels=True)
+async def unhide(ctx):
+    await ctx.channel.set_permissions(ctx.guild.default_role, view_channel=None)
+    await ok(ctx, "👀 visible.")
+
+@bot.command(name="nuke")
+@commands.has_permissions(manage_channels=True)
+@commands.bot_has_permissions(manage_channels=True)
+async def nuke(ctx):
+    if not isinstance(ctx.channel, discord.TextChannel):
+        return await bad(ctx, "only text channels.")
+    position = ctx.channel.position
+    new_ch = await ctx.channel.clone()
+    await new_ch.edit(position=position)
+    await ctx.channel.delete(reason="nuke")
+    await new_ch.send("💥 fresh slate.")
+
+@bot.command(name="pin")
+@commands.has_permissions(manage_messages=True)
+@commands.bot_has_permissions(manage_messages=True)
+async def pin_cmd(ctx):
+    if not ctx.message.reference:
+        return await bad(ctx, "reply to the message you want pinned.")
+    msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+    await msg.pin()
+    await ok(ctx, "📌 pinned.")
+
+@bot.command(name="unpin")
+@commands.has_permissions(manage_messages=True)
+async def unpin_cmd(ctx):
+    if not ctx.message.reference:
+        return await bad(ctx, "reply to the message you want unpinned.")
+    msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+    await msg.unpin()
+    await ok(ctx, "📍 unpinned.")
+
+# =============== ROLES ===============
+
+@bot.group(name="role", invoke_without_command=True)
+@commands.has_permissions(manage_roles=True)
+@commands.bot_has_permissions(manage_roles=True)
+async def role_group(ctx):
+    await bad(ctx, "try: `add`, `remove`, `create`, `delete`")
+
+@role_group.command(name="add")
+async def role_add(ctx, member: discord.Member, *, role: discord.Role):
+    await member.add_roles(role)
+    await ok(ctx, f"✅ gave **{role.name}** to **{member}**.")
+
+@role_group.command(name="remove")
+async def role_remove(ctx, member: discord.Member, *, role: discord.Role):
+    await member.remove_roles(role)
+    await ok(ctx, f"❌ took **{role.name}** from **{member}**.")
+
+@role_group.command(name="create")
+async def role_create(ctx, *, name: str):
+    r = await ctx.guild.create_role(name=name)
+    await ok(ctx, f"✨ made role **{r.name}**.")
+
+@role_group.command(name="delete")
+async def role_delete(ctx, *, role: discord.Role):
+    name = role.name
+    await role.delete()
+    await ok(ctx, f"🗑️ nuked role **{name}**.")
+
+@bot.command(name="giverole", aliases=["gr"])
+@commands.has_permissions(manage_roles=True)
+@commands.bot_has_permissions(manage_roles=True)
+async def giverole(ctx, member: discord.Member, *, role: discord.Role):
+    await member.add_roles(role)
+    await ok(ctx, f"✅ gave **{role.name}** to **{member}**.")
+
+@bot.command(name="takerole", aliases=["tr"])
+@commands.has_permissions(manage_roles=True)
+@commands.bot_has_permissions(manage_roles=True)
+async def takerole(ctx, member: discord.Member, *, role: discord.Role):
+    await member.remove_roles(role)
+    await ok(ctx, f"❌ took **{role.name}** from **{member}**.")
+
+# =============== MEMBER ===============
+
+@bot.command(name="nick", aliases=["nickname"])
+@commands.has_permissions(manage_nicknames=True)
+@commands.bot_has_permissions(manage_nicknames=True)
+async def nick(ctx, member: discord.Member, *, new_nick: str = None):
+    await member.edit(nick=new_nick)
+    await ok(ctx, f"✏️ **{member}** is now **{new_nick or '(cleared)'}**.")
+
+@bot.command(name="resetnick")
+@commands.has_permissions(manage_nicknames=True)
+async def resetnick(ctx, member: discord.Member):
+    await member.edit(nick=None)
+    await ok(ctx, "✏️ nick wiped.")
+
+# =============== SERVER ===============
+
+@bot.command(name="icon")
+async def icon(ctx):
+    if not ctx.guild.icon:
+        return await bad(ctx, "no icon set.")
+    e = pink_embed(ctx.guild.name)
+    e.set_image(url=ctx.guild.icon.url)
+    await ctx.send(embed=e)
+
+@bot.command(name="roleslist", aliases=["rolelist", "roles-list"])
+async def roleslist(ctx):
+    sorted_roles = sorted(ctx.guild.roles, key=lambda r: r.position, reverse=True)
+    text = " ".join(r.mention for r in sorted_roles)
+    for chunk in [text[i:i+1900] for i in range(0, len(text), 1900)]:
+        await ctx.send(chunk)
+
+# =============== UTILITY ===============
+
+@bot.command(name="uptime")
+async def uptime(ctx):
+    delta = dt.datetime.now(dt.timezone.utc) - bot.start_time
+    await ok(ctx, f"⏰ up for **{int(delta.total_seconds())}s** without a nap.")
+
+# =============== FUN ACTIONS (waifu.pics API) ===============
+
+async def waifu_gif(category: str) -> Optional[str]:
+    try:
+        j = await fetch_json(f"https://api.waifu.pics/sfw/{category}")
+        return j.get("url")
+    except: return None
+
+async def action_cmd(ctx, target: discord.Member, verb: str, emoji: str, category: str):
+    url = await waifu_gif(category)
+    text = f"{emoji} **{ctx.author.name}** {verb} **{target.name}**."
+    if url:
+        e = pink_embed(desc=text)
+        e.set_image(url=url)
+        await ctx.send(embed=e)
+    else:
+        await ctx.send(text)
+
+async def solo_action(ctx, verb: str, emoji: str, category: str):
+    url = await waifu_gif(category)
+    text = f"{emoji} **{ctx.author.name}** {verb}."
+    if url:
+        e = pink_embed(desc=text)
+        e.set_image(url=url)
+        await ctx.send(embed=e)
+    else:
+        await ctx.send(text)
+
+@bot.command(name="poke")
+async def poke(ctx, member: discord.Member): await action_cmd(ctx, member, "pokes", "👉", "poke")
+
+@bot.command(name="bite")
+async def bite(ctx, member: discord.Member): await action_cmd(ctx, member, "bites", "🦷", "bite")
+
+@bot.command(name="cuddle")
+async def cuddle(ctx, member: discord.Member): await action_cmd(ctx, member, "cuddles with", "💞", "cuddle")
+
+@bot.command(name="bully")
+async def bully(ctx, member: discord.Member): await action_cmd(ctx, member, "is bullying", "😈", "bully")
+
+@bot.command(name="yeet")
+async def yeet(ctx, member: discord.Member): await action_cmd(ctx, member, "yeets", "🚀", "yeet")
+
+@bot.command(name="nom")
+async def nom(ctx, member: discord.Member): await action_cmd(ctx, member, "noms on", "😋", "nom")
+
+@bot.command(name="highfive", aliases=["hf"])
+async def highfive(ctx, member: discord.Member): await action_cmd(ctx, member, "high-fives", "🙏", "highfive")
+
+@bot.command(name="handhold")
+async def handhold(ctx, member: discord.Member): await action_cmd(ctx, member, "holds hands with", "🤝", "handhold")
+
+@bot.command(name="lick")
+async def lick(ctx, member: discord.Member): await action_cmd(ctx, member, "licks", "👅", "lick")
+
+@bot.command(name="kill")
+async def kill(ctx, member: discord.Member): await action_cmd(ctx, member, "ends", "🔪", "kill")
+
+@bot.command(name="dance")
+async def dance(ctx): await solo_action(ctx, "hits the dancefloor", "💃", "dance")
+
+@bot.command(name="cry")
+async def cry(ctx): await solo_action(ctx, "is sobbing", "😭", "cry")
+
+@bot.command(name="wave")
+async def wave(ctx): await solo_action(ctx, "waves hello", "👋", "wave")
+
+@bot.command(name="blush")
+async def blush(ctx): await solo_action(ctx, "is blushing", "😊", "blush")
+
+@bot.command(name="smile")
+async def smile(ctx): await solo_action(ctx, "smiles", "😊", "smile")
+
+@bot.command(name="smug")
+async def smug(ctx): await solo_action(ctx, "looks smug", "😏", "smug")
+
+@bot.command(name="wink")
+async def wink(ctx): await solo_action(ctx, "winks", "😉", "wink")
+
+@bot.command(name="cringe")
+async def cringe(ctx): await solo_action(ctx, "cringes hard", "😬", "cringe")
+
+@bot.command(name="happy")
+async def happy(ctx): await solo_action(ctx, "is happy", "😄", "happy")
+
+# =============== PICTURES ===============
+
+@bot.command(name="cat")
+async def cat(ctx):
+    try:
+        j = await fetch_json("https://api.thecatapi.com/v1/images/search")
+        e = pink_embed()
+        e.set_image(url=j[0]["url"])
+        e.set_footer(text="🐱 meow")
+        await ctx.send(embed=e)
+    except: await bad(ctx, "cats are hiding.")
+
+@bot.command(name="dog")
+async def dog(ctx):
+    try:
+        j = await fetch_json("https://dog.ceo/api/breeds/image/random")
+        e = pink_embed()
+        e.set_image(url=j["message"])
+        e.set_footer(text="🐶 woof")
+        await ctx.send(embed=e)
+    except: await bad(ctx, "dogs ran off.")
+
+@bot.command(name="fox")
+async def fox(ctx):
+    try:
+        j = await fetch_json("https://randomfox.ca/floof/")
+        e = pink_embed()
+        e.set_image(url=j["image"])
+        e.set_footer(text="🦊")
+        await ctx.send(embed=e)
+    except: await bad(ctx, "no foxes today.")
+
+@bot.command(name="duck")
+async def duck(ctx):
+    try:
+        j = await fetch_json("https://random-d.uk/api/v2/random")
+        e = pink_embed()
+        e.set_image(url=j["url"])
+        e.set_footer(text="🦆 quack")
+        await ctx.send(embed=e)
+    except: await bad(ctx, "ducks flew south.")
+
+# =============== TEXT TOYS ===============
+
+@bot.command(name="mock")
+async def mock(ctx, *, text: str):
+    result = "".join(c.lower() if i % 2 else c.upper() for i, c in enumerate(text))
+    await ok(ctx, result)
+
+@bot.command(name="reverse", aliases=["rev"])
+async def reverse(ctx, *, text: str):
+    await ok(ctx, text[::-1])
+
+@bot.command(name="caps", aliases=["upper"])
+async def caps(ctx, *, text: str):
+    await ok(ctx, text.upper())
+
+@bot.command(name="lower")
+async def lower(ctx, *, text: str):
+    await ok(ctx, text.lower())
+
+@bot.command(name="clap")
+async def clap(ctx, *, text: str):
+    await ok(ctx, " 👏 ".join(text.split()))
+
+@bot.command(name="owo", aliases=["uwu"])
+async def owo(ctx, *, text: str):
+    owoified = text.replace("r", "w").replace("l", "w").replace("R", "W").replace("L", "W")
+    owoified = re.sub(r"n([aeiou])", r"ny\1", owoified)
+    owoified = re.sub(r"N([aeiou])", r"Ny\1", owoified)
+    faces = [" owo", " uwu", " ^w^", " >w<", " :3"]
+    await ok(ctx, owoified + random.choice(faces))
+
+@bot.command(name="base64", aliases=["b64"])
+async def base64_cmd(ctx, mode: str, *, text: str):
+    try:
+        if mode.lower() in ("encode", "e"):
+            await ok(ctx, "```\n" + b64lib.b64encode(text.encode()).decode() + "\n```")
+        elif mode.lower() in ("decode", "d"):
+            await ok(ctx, "```\n" + b64lib.b64decode(text).decode() + "\n```")
+        else:
+            await bad(ctx, "mode: `encode` or `decode`.")
+    except: await bad(ctx, "invalid input.")
+
+MORSE_MAP = {
+    "A": ".-", "B": "-...", "C": "-.-.", "D": "-..", "E": ".", "F": "..-.", "G": "--.",
+    "H": "....", "I": "..", "J": ".---", "K": "-.-", "L": ".-..", "M": "--", "N": "-.",
+    "O": "---", "P": ".--.", "Q": "--.-", "R": ".-.", "S": "...", "T": "-", "U": "..-",
+    "V": "...-", "W": ".--", "X": "-..-", "Y": "-.--", "Z": "--..",
+    "0": "-----", "1": ".----", "2": "..---", "3": "...--", "4": "....-",
+    "5": ".....", "6": "-....", "7": "--...", "8": "---..", "9": "----.",
+}
+MORSE_INV = {v: k for k, v in MORSE_MAP.items()}
+
+@bot.command(name="morse")
+async def morse(ctx, mode: str, *, text: str):
+    if mode.lower() in ("encode", "e"):
+        result = " ".join("/" if c == " " else MORSE_MAP.get(c.upper(), "") for c in text).strip()
+        await ok(ctx, result or "nothing to encode.")
+    elif mode.lower() in ("decode", "d"):
+        result = "".join(" " if c == "/" else MORSE_INV.get(c, "") for c in text.split())
+        await ok(ctx, result)
+    else:
+        await bad(ctx, "mode: `encode` or `decode`.")
+
+@bot.command(name="binary", aliases=["bin"])
+async def binary(ctx, mode: str, *, text: str):
+    try:
+        if mode.lower() in ("encode", "e"):
+            await ok(ctx, " ".join(format(ord(c), "08b") for c in text))
+        elif mode.lower() in ("decode", "d"):
+            await ok(ctx, "".join(chr(int(b, 2)) for b in text.split()))
+        else: await bad(ctx, "mode: `encode` or `decode`.")
+    except: await bad(ctx, "invalid binary.")
+
+@bot.command(name="rot13")
+async def rot13(ctx, *, text: str):
+    import codecs
+    await ok(ctx, codecs.encode(text, "rot_13"))
+
+@bot.command(name="hexencode")
+async def hex_cmd(ctx, mode: str, *, text: str):
+    try:
+        if mode.lower() in ("encode", "e"):
+            await ok(ctx, text.encode().hex())
+        elif mode.lower() in ("decode", "d"):
+            await ok(ctx, bytes.fromhex(text).decode())
+        else: await bad(ctx, "mode: `encode` or `decode`.")
+    except: await bad(ctx, "bad input.")
+
+@bot.command(name="length", aliases=["len"])
+async def length(ctx, *, text: str):
+    await ok(ctx, f"📏 **{len(text)}** chars • **{len(text.split())}** words")
+
+@bot.command(name="spoiler")
+async def spoiler(ctx, *, text: str):
+    await ctx.message.delete()
+    await ctx.send(f"||{text}||")
+
+# =============== MATH / RNG ===============
+
+@bot.command(name="math", aliases=["calc"])
+async def math_cmd(ctx, *, expr: str):
+    if not re.fullmatch(r"[\d\s+\-*/().%*]+", expr):
+        return await bad(ctx, "only numbers and `+ - * / % ** ( )` allowed.")
+    try:
+        result = eval(expr, {"__builtins__": {}}, {})
+        await ok(ctx, f"🧮 `{expr}` = **{result}**")
+    except: await bad(ctx, "invalid expression.")
+
+@bot.command(name="random", aliases=["rand"])
+async def random_num(ctx, lo: int, hi: int):
+    if lo > hi: lo, hi = hi, lo
+    await ok(ctx, f"🎲 {random.randint(lo, hi)}")
+
+@bot.command(name="pwgen", aliases=["password"])
+async def pwgen(ctx, length: int = 20):
+    length = max(4, min(128, length))
+    charset = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*"
+    pw = "".join(random.choice(charset) for _ in range(length))
+    try:
+        await ctx.author.send(f"🔑 `{pw}`")
+        await ok(ctx, "🔑 sent to your DMs.")
+    except:
+        await ok(ctx, f"🔑 (DMs closed, posting here)\n`{pw}`")
+
+# =============== DISCORD UTILS ===============
+
+@bot.command(name="snowflake", aliases=["sf"])
+async def snowflake(ctx, sf: str):
+    if not re.fullmatch(r"\d{15,22}", sf):
+        return await bad(ctx, "give a valid ID.")
+    ts = (int(sf) >> 22) + 1420070400000
+    await ok(ctx, f"🆔 `{sf}` → <t:{ts // 1000}:F> (<t:{ts // 1000}:R>)")
+
+@bot.command(name="timestamp", aliases=["ts"])
+async def timestamp_cmd(ctx, *, when: str = "now"):
+    try:
+        if when.lower() == "now":
+            d = dt.datetime.now(dt.timezone.utc)
+        else:
+            d = dt.datetime.fromisoformat(when)
+        t = int(d.timestamp())
+        await ok(ctx, f"`<t:{t}>` → <t:{t}>\n`<t:{t}:F>` → <t:{t}:F>\n`<t:{t}:R>` → <t:{t}:R>")
+    except: await bad(ctx, "invalid date — try `2025-12-25` or `now`.")
+
+@bot.command(name="enlarge", aliases=["bigemoji", "jumbo"])
+async def enlarge(ctx, emoji: str):
+    m = re.match(r"<(a?):\w+:(\d+)>", emoji)
+    if not m: return await bad(ctx, "give me a custom emoji.")
+    ext = "gif" if m.group(1) else "png"
+    url = f"https://cdn.discordapp.com/emojis/{m.group(2)}.{ext}?size=512"
+    e = pink_embed()
+    e.set_image(url=url)
+    await ctx.send(embed=e)
+
+@bot.command(name="steal")
+@commands.has_permissions(manage_emojis=True)
+@commands.bot_has_permissions(manage_emojis=True)
+async def steal(ctx, emoji: str, name: str = None):
+    m = re.match(r"<(a?):(\w+):(\d+)>", emoji)
+    if not m: return await bad(ctx, "give me a custom emoji.")
+    ext = "gif" if m.group(1) else "png"
+    emoji_name = name or m.group(2)
+    url = f"https://cdn.discordapp.com/emojis/{m.group(3)}.{ext}"
+    async with aiohttp.ClientSession() as s:
+        async with s.get(url) as r:
+            img = await r.read()
+    new_emoji = await ctx.guild.create_custom_emoji(name=emoji_name, image=img)
+    await ok(ctx, f"✨ stolen as {new_emoji} `:{new_emoji.name}:`")
+
+# =============== MISC ===============
+
+@bot.command(name="color", aliases=["colour", "hex"])
+async def color(ctx, hex_code: str):
+    hex_code = hex_code.replace("#", "").lower()
+    if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
+        return await bad(ctx, "give a 6-digit hex like `ff66cc`.")
+    i = int(hex_code, 16)
+    e = discord.Embed(title=f"#{hex_code.upper()}", color=i)
+    e.set_image(url=f"https://singlecolorimage.com/get/{hex_code}/400x200.png")
+    e.add_field(name="R", value=(i >> 16) & 255, inline=True)
+    e.add_field(name="G", value=(i >> 8) & 255, inline=True)
+    e.add_field(name="B", value=i & 255, inline=True)
+    await ctx.send(embed=e)
+
+@bot.command(name="firstmsg", aliases=["first"])
+async def firstmsg(ctx):
+    async for m in ctx.channel.history(limit=1, oldest_first=True):
+        return await ok(ctx, f"first message: {m.jump_url}")
+    await bad(ctx, "no messages found.")
+
+@bot.command(name="qr")
+async def qr(ctx, *, text: str):
+    import urllib.parse as up
+    url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={up.quote(text)}"
+    e = pink_embed()
+    e.set_image(url=url)
+    e.set_footer(text=text[:100])
+    await ctx.send(embed=e)
+
+@bot.command(name="rate")
+async def rate(ctx, *, thing: str = "that"):
+    await ok(ctx, f"i'd rate **{thing}** a **{random.randint(0, 10)}/10**.")
+
+@bot.command(name="shorten")
+async def shorten(ctx, url: str):
+    if not re.match(r"^https?://", url):
+        return await bad(ctx, "give a full URL.")
+    import urllib.parse as up
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(f"https://is.gd/create.php?format=simple&url={up.quote(url)}") as r:
+                short = (await r.text()).strip()
+        if not short.startswith("http"):
+            return await bad(ctx, f"failed: {short}")
+        await ok(ctx, f"🔗 {short}")
+    except: await bad(ctx, "shortener down.")
+
+# =============== LOOKUPS ===============
+
+@bot.command(name="joke")
+async def joke(ctx):
+    try:
+        j = await fetch_json("https://v2.jokeapi.dev/joke/Any?safe-mode")
+        text = j["joke"] if j["type"] == "single" else f"{j['setup']}\n\n|| {j['delivery']} ||"
+        await ok(ctx, f"🎭 {text}")
+    except: await bad(ctx, "joke api ghosted me.")
+
+@bot.command(name="dadjoke", aliases=["dad"])
+async def dadjoke(ctx):
+    try:
+        j = await fetch_json("https://icanhazdadjoke.com/", headers={"Accept": "application/json", "User-Agent": "kitty-bot"})
+        await ok(ctx, f"👨 {j['joke']}")
+    except: await bad(ctx, "dad is out buying milk.")
+
+@bot.command(name="fact")
+async def fact(ctx):
+    try:
+        j = await fetch_json("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en")
+        await ok(ctx, f"🧠 {j['text']}")
+    except: await bad(ctx, "facts machine broke.")
+
+@bot.command(name="advice")
+async def advice(ctx):
+    try:
+        j = await fetch_json("https://api.adviceslip.com/advice")
+        await ok(ctx, f"💡 {j['slip']['advice']}")
+    except: await bad(ctx, "no advice left.")
+
+@bot.command(name="quote")
+async def quote(ctx):
+    try:
+        j = await fetch_json("https://zenquotes.io/api/random")
+        await ok(ctx, f"💬 *\"{j[0]['q']}\"* — **{j[0]['a']}**")
+    except: await bad(ctx, "muses on strike.")
+
+@bot.command(name="meme")
+async def meme(ctx):
+    try:
+        j = await fetch_json("https://meme-api.com/gimme")
+        e = pink_embed(j.get("title", "meme")[:256])
+        e.url = j.get("postLink")
+        e.set_image(url=j["url"])
+        e.set_footer(text=f"r/{j['subreddit']} • ⬆ {j['ups']}")
+        await ctx.send(embed=e)
+    except: await bad(ctx, "meme supply disrupted.")
+
+@bot.command(name="define", aliases=["def"])
+async def define(ctx, *, word: str):
+    try:
+        j = await fetch_json(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}")
+        entry = j[0]
+        e = pink_embed(entry["word"])
+        if entry.get("phonetic"): e.description = f"*{entry['phonetic']}*"
+        for m in entry["meanings"][:4]:
+            defs = "\n".join(f"{i+1}. {d['definition']}" for i, d in enumerate(m["definitions"][:3]))
+            e.add_field(name=m["partOfSpeech"], value=defs[:1024], inline=False)
+        await ctx.send(embed=e)
+    except: await bad(ctx, f"no entry for **{word}**.")
+
+@bot.command(name="wiki")
+async def wiki(ctx, *, topic: str):
+    try:
+        j = await fetch_json(f"https://en.wikipedia.org/api/rest_v1/page/summary/{topic.replace(' ', '_')}")
+        if j.get("type") == "disambiguation":
+            return await bad(ctx, "too ambiguous, be more specific.")
+        e = pink_embed(j["title"])
+        e.url = j.get("content_urls", {}).get("desktop", {}).get("page")
+        e.description = j.get("extract", "no summary.")[:2000]
+        if j.get("thumbnail"): e.set_thumbnail(url=j["thumbnail"]["source"])
+        await ctx.send(embed=e)
+    except: await bad(ctx, "wikipedia had no answer.")
+
+@bot.command(name="github", aliases=["gh"])
+async def github(ctx, username: str):
+    try:
+        j = await fetch_json(f"https://api.github.com/users/{username}")
+        e = pink_embed(j["login"])
+        e.url = j["html_url"]
+        e.set_thumbnail(url=j["avatar_url"])
+        e.description = j.get("bio") or "*no bio*"
+        e.add_field(name="Repos", value=j["public_repos"], inline=True)
+        e.add_field(name="Followers", value=j["followers"], inline=True)
+        e.add_field(name="Following", value=j["following"], inline=True)
+        await ctx.send(embed=e)
+    except: await bad(ctx, "user not found.")
+
+@bot.command(name="npm")
+async def npm(ctx, pkg: str):
+    try:
+        j = await fetch_json(f"https://registry.npmjs.org/{pkg}")
+        latest = j["dist-tags"]["latest"]
+        v = j["versions"][latest]
+        e = pink_embed(f"{j['name']} @ {latest}")
+        e.url = f"https://www.npmjs.com/package/{j['name']}"
+        e.description = j.get("description", "*no description*")
+        e.add_field(name="License", value=v.get("license", "?"), inline=True)
+        e.add_field(name="Author", value=v.get("author", {}).get("name") if isinstance(v.get("author"), dict) else "?", inline=True)
+        await ctx.send(embed=e)
+    except: await bad(ctx, "package not found.")
+
+@bot.command(name="coin", aliases=["crypto"])
+async def coin(ctx, coin_id: str):
+    try:
+        j = await fetch_json(f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id.lower()}&vs_currencies=usd&include_24hr_change=true")
+        d = j.get(coin_id.lower())
+        if not d: return await bad(ctx, f"no coin \"{coin_id}\".")
+        arrow = "📈" if d["usd_24h_change"] >= 0 else "📉"
+        await ok(ctx, f"{arrow} **{coin_id}** — **${d['usd']:,}** ({d['usd_24h_change']:.2f}% 24h)")
+    except: await bad(ctx, "coingecko napping.")
+
+@bot.command(name="weather")
+async def weather(ctx, *, city: str):
+    try:
+        geo = await fetch_json(f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1")
+        if not geo.get("results"): return await bad(ctx, "city not found.")
+        g = geo["results"][0]
+        w = await fetch_json(f"https://api.open-meteo.com/v1/forecast?latitude={g['latitude']}&longitude={g['longitude']}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&temperature_unit=celsius")
+        c = w["current"]
+        e = pink_embed(f"🌤️ {g['name']}, {g['country']}")
+        e.add_field(name="Temp", value=f"{c['temperature_2m']}°C", inline=True)
+        e.add_field(name="Humidity", value=f"{c['relative_humidity_2m']}%", inline=True)
+        e.add_field(name="Wind", value=f"{c['wind_speed_10m']} km/h", inline=True)
+        await ctx.send(embed=e)
+    except: await bad(ctx, "weather down.")
+
+# =============== RECON / OSINT ===============
+
+@bot.command(name="iplookup", aliases=["ip"])
+async def iplookup(ctx, ip: str):
+    try:
+        j = await fetch_json(f"http://ip-api.com/json/{ip}?fields=status,message,country,regionName,city,zip,lat,lon,timezone,isp,org,as,query,proxy,hosting")
+        if j.get("status") != "success": return await bad(ctx, f"lookup failed: {j.get('message')}")
+        e = pink_embed(f"🌍 {j['query']}")
+        e.add_field(name="Country", value=j.get("country", "?"), inline=True)
+        e.add_field(name="Region", value=j.get("regionName", "?"), inline=True)
+        e.add_field(name="City", value=j.get("city", "?"), inline=True)
+        e.add_field(name="ZIP", value=j.get("zip", "?"), inline=True)
+        e.add_field(name="Timezone", value=j.get("timezone", "?"), inline=True)
+        e.add_field(name="Coords", value=f"{j.get('lat')}, {j.get('lon')}", inline=True)
+        e.add_field(name="ISP", value=j.get("isp", "?"), inline=True)
+        e.add_field(name="Org", value=j.get("org", "?"), inline=True)
+        e.add_field(name="ASN", value=j.get("as", "?"), inline=True)
+        e.add_field(name="Proxy/VPN", value="yes" if j.get("proxy") else "no", inline=True)
+        e.add_field(name="Hosting", value="yes" if j.get("hosting") else "no", inline=True)
+        await ctx.send(embed=e)
+    except Exception as ex: await bad(ctx, f"lookup failed: `{ex}`")
+
+@bot.command(name="dns")
+async def dns_cmd(ctx, domain: str, record_type: str = "A"):
+    try:
+        j = await fetch_json(f"https://dns.google/resolve?name={domain}&type={record_type.upper()}")
+        records = j.get("Answer", [])
+        if not records: return await bad(ctx, f"no {record_type} records for **{domain}**.")
+        lines = [f"`{r['data']}` (TTL {r['TTL']})" for r in records[:20]]
+        e = pink_embed(f"🌐 {record_type.upper()} records — {domain}")
+        e.description = "\n".join(lines)[:4000]
+        await ctx.send(embed=e)
+    except Exception as ex: await bad(ctx, f"dns query failed: `{ex}`")
+
+@bot.command(name="subbrute", aliases=["subs", "subdomains"])
+async def subbrute(ctx, domain: str):
+    working = await ctx.send(f"🔍 digging through crt.sh for **{domain}**...")
+    try:
+        j = await fetch_json(f"https://crt.sh/?q=%25.{domain}&output=json")
+        subs = set()
+        for row in j:
+            for n in (row.get("name_value") or "").split("\n"):
+                clean = n.strip().lower()
+                if clean and not clean.startswith("*") and clean.endswith(domain):
+                    subs.add(clean)
+        subs = sorted(subs)
+        if not subs:
+            return await working.edit(content=f"💀 no subdomains for **{domain}**.")
+        header = f"🎯 **{len(subs)}** subdomains for **{domain}**"
+        text = "\n".join(subs)
+        if len(text) < 1800:
+            await working.edit(content=f"{header}\n```\n{text}\n```")
+        else:
+            file = discord.File(fp=__import__("io").BytesIO(text.encode()), filename=f"{domain}-subs.txt")
+            await working.edit(content=header, attachments=[file])
+    except Exception as ex: await working.edit(content=f"💀 subbrute failed: `{ex}`")
+
+@bot.command(name="whois")
+async def whois_cmd(ctx, domain: str):
+    try:
+        j = await fetch_json(f"https://rdap.org/domain/{domain}")
+        events = "\n".join(f"{e['eventAction']}: {e.get('eventDate', '')[:10]}" for e in j.get("events", []))
+        ns = "\n".join(n["ldhName"] for n in j.get("nameservers", []))
+        status = ", ".join(j.get("status", []))
+        e = pink_embed(f"🔎 whois — {domain}")
+        e.add_field(name="Events", value=(events or "?")[:1024], inline=False)
+        e.add_field(name="Nameservers", value=(ns or "?")[:1024], inline=False)
+        e.add_field(name="Status", value=(status or "?")[:1024], inline=False)
+        await ctx.send(embed=e)
+    except Exception as ex: await bad(ctx, f"whois failed: `{ex}`")
+
+@bot.command(name="reverseip", aliases=["rip"])
+async def reverseip(ctx, ip: str):
+    try:
+        parts = ip.split(".")
+        rev = ".".join(reversed(parts)) + ".in-addr.arpa"
+        j = await fetch_json(f"https://dns.google/resolve?name={rev}&type=PTR")
+        ptr = (j.get("Answer") or [{}])[0].get("data")
+        if not ptr: return await bad(ctx, "no PTR record.")
+        await ok(ctx, f"🔄 {ip} → `{ptr}`")
+    except Exception as ex: await bad(ctx, f"failed: `{ex}`")
+
+@bot.command(name="headers")
+async def headers(ctx, url: str):
+    if not re.match(r"^https?://", url): url = "https://" + url
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.head(url, allow_redirects=True) as r:
+                lines = "\n".join(f"{k}: {v}" for k, v in r.headers.items())
+                e = pink_embed(f"📡 {r.status} — {url}")
+                e.description = "```\n" + lines[:3900] + "\n```"
+                await ctx.send(embed=e)
+    except Exception as ex: await bad(ctx, f"fetch failed: `{ex}`")
+
+@bot.command(name="status", aliases=["http"])
+async def http_status(ctx, url: str):
+    if not re.match(r"^https?://", url): url = "https://" + url
+    start = dt.datetime.now()
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.head(url, allow_redirects=True) as r:
+                ms = int((dt.datetime.now() - start).total_seconds() * 1000)
+                emoji = "✅" if r.status < 400 else "⚠️" if r.status < 500 else "💀"
+                await ok(ctx, f"{emoji} **{r.status}** — {ms}ms — `{r.url}`")
+    except Exception as ex: await ok(ctx, f"💀 down — `{ex}`")
+
 # =============== RUN ===============
+
+@bot.event
+async def setup_hook_patch():
+    bot.start_time = dt.datetime.now(dt.timezone.utc)
+
+@bot.event
+async def on_connect():
+    if not hasattr(bot, "start_time"):
+        bot.start_time = dt.datetime.now(dt.timezone.utc)
 
 if __name__ == "__main__":
     bot.run(TOKEN)
