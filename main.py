@@ -191,9 +191,11 @@ class MusicControls(discord.ui.View):
 
 @bot.event
 async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
+    print(f"[track_start] fired for {payload.track.title}")
     player: wavelink.Player = payload.player
     channel = getattr(player, "home_channel", None)
     if not channel:
+        print("[track_start] no home_channel set — skipping UI")
         return
     # Delete the previous now-playing message if any
     prev = getattr(player, "now_playing_msg", None)
@@ -204,8 +206,9 @@ async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
         view = MusicControls(player)
         msg = await channel.send(embed=make_now_playing_embed(player), view=view)
         player.now_playing_msg = msg
+        print(f"[track_start] UI sent to #{channel.name}")
     except Exception as e:
-        print(f"now-playing send failed: {e}")
+        print(f"[track_start] send failed: {e}")
 
 @bot.event
 async def on_message_delete(msg: discord.Message):
@@ -693,13 +696,21 @@ async def slash_play(interaction: discord.Interaction, query: str):
         if isinstance(tracks, wavelink.Playlist):
             added = await player.queue.put_wait(tracks)
             await interaction.followup.send(f"✅ queued **{added}** tracks from **{tracks.name}**")
+            if not player.playing:
+                next_t = player.queue.get()
+                print(f"[slash_play] starting {next_t.title}")
+                await player.play(next_t)
         else:
             track = tracks[0]
-            await player.queue.put_wait(track)
-            await interaction.followup.send(f"✅ queued **{track.title}**")
-        if not player.playing:
-            await player.play(player.queue.get())
+            if not player.playing:
+                print(f"[slash_play] starting {track.title} immediately")
+                await interaction.followup.send(f"▶️ playing **{track.title}**")
+                await player.play(track)
+            else:
+                await player.queue.put_wait(track)
+                await interaction.followup.send(f"✅ queued **{track.title}**")
     except Exception as e:
+        print(f"[slash_play] error: {e}")
         await interaction.followup.send(f"💀 play failed: `{e}`")
 
 @bot.tree.command(name="skip", description="Skip the current song")
