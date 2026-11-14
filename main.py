@@ -231,15 +231,10 @@ class MusicControls(discord.ui.View):
         await interaction.response.defer()
         await self.update_display(interaction)
 
-@bot.event
-async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
-    print(f"[track_start] fired for {payload.track.title}")
-    player: wavelink.Player = payload.player
-    channel = getattr(player, "home_channel", None)
-    if not channel:
-        print("[track_start] no home_channel set — skipping UI")
-        return
-    # Delete the previous now-playing message if any
+async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel):
+    """Send/refresh the music control panel. Safe to call anywhere."""
+    if not player or not player.current or not channel:
+        return None
     prev = getattr(player, "now_playing_msg", None)
     if prev:
         try: await prev.delete()
@@ -248,9 +243,21 @@ async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
         view = MusicControls(player)
         msg = await channel.send(embed=make_now_playing_embed(player), view=view)
         player.now_playing_msg = msg
-        print(f"[track_start] UI sent to #{channel.name}")
+        return msg
     except Exception as e:
-        print(f"[track_start] send failed: {e}")
+        print(f"panel send failed: {e}")
+        return None
+
+@bot.event
+async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
+    print(f"[track_start] fired for {payload.track.title}")
+    player: wavelink.Player = payload.player
+    channel = getattr(player, "home_channel", None)
+    if not channel:
+        print("[track_start] no home_channel set — skipping UI")
+        return
+    await send_music_panel(player, channel)
+    print(f"[track_start] UI sent to #{channel.name}")
 
 @bot.event
 async def on_message_delete(msg: discord.Message):
@@ -735,35 +742,22 @@ async def slash_play(interaction: discord.Interaction, query: str):
         tracks: wavelink.Search = await wavelink.Playable.search(query)
         if not tracks:
             return await interaction.followup.send("nothing found.")
-        started_new = False
         if isinstance(tracks, wavelink.Playlist):
             added = await player.queue.put_wait(tracks)
             await interaction.followup.send(f"✅ queued **{added}** tracks from **{tracks.name}**")
             if not player.playing:
                 await player.play(player.queue.get())
-                started_new = True
         else:
             track = tracks[0]
             if not player.playing:
                 await interaction.followup.send(f"▶️ playing **{track.title}**")
                 await player.play(track)
-                started_new = True
             else:
                 await player.queue.put_wait(track)
                 await interaction.followup.send(f"✅ queued **{track.title}**")
-        # Send the UI directly — don't rely on track_start event
-        if started_new:
-            await asyncio.sleep(1)  # let Lavalink register the track
-            prev = getattr(player, "now_playing_msg", None)
-            if prev:
-                try: await prev.delete()
-                except: pass
-            try:
-                view = MusicControls(player)
-                msg = await interaction.channel.send(embed=make_now_playing_embed(player), view=view)
-                player.now_playing_msg = msg
-            except Exception as e:
-                print(f"[slash_play] UI send failed: {e}")
+        # Always ensure the music panel is visible after /play
+        await asyncio.sleep(1)
+        await send_music_panel(player, interaction.channel)
     except Exception as e:
         print(f"[slash_play] error: {e}")
         await interaction.followup.send(f"💀 play failed: `{e}`")
@@ -883,18 +877,8 @@ async def pl_play(interaction: discord.Interaction, name: str):
     if first_track and not player.playing:
         await player.play(first_track)
     await interaction.followup.send(f"▶️ loaded **{added}** tracks from **{name}**.")
-
-    if first_track:
-        await asyncio.sleep(1)
-        prev = getattr(player, "now_playing_msg", None)
-        if prev:
-            try: await prev.delete()
-            except: pass
-        try:
-            view = MusicControls(player)
-            msg = await interaction.channel.send(embed=make_now_playing_embed(player), view=view)
-            player.now_playing_msg = msg
-        except: pass
+    await asyncio.sleep(1)
+    await send_music_panel(player, interaction.channel)
 
 @playlist_group.command(name="list", description="List your playlists")
 async def pl_list(interaction: discord.Interaction):
@@ -946,6 +930,15 @@ async def pl_delete(interaction: discord.Interaction, name: str):
 bot.tree.add_command(playlist_group)
 
 # Standalone /back slash command
+@bot.tree.command(name="panel", description="Show the music control panel")
+async def slash_panel(interaction: discord.Interaction):
+    player: wavelink.Player = interaction.guild.voice_client
+    if not player or not player.current:
+        return await interaction.response.send_message("nothing playing.", ephemeral=True)
+    player.home_channel = interaction.channel
+    await interaction.response.send_message("🎛️ panel coming up...", ephemeral=True)
+    await send_music_panel(player, interaction.channel)
+
 @bot.tree.command(name="back", description="Play the previous track")
 async def slash_back(interaction: discord.Interaction):
     player: wavelink.Player = interaction.guild.voice_client
