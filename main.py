@@ -618,6 +618,27 @@ async def slash_stop(interaction: discord.Interaction):
     await player.disconnect()
     await interaction.response.send_message("⏹️ stopped and left.")
 
+@bot.tree.command(name="join", description="Join your voice channel")
+async def slash_join(interaction: discord.Interaction):
+    if not interaction.user.voice:
+        return await interaction.response.send_message("join a voice channel first, hun.")
+    channel = interaction.user.voice.channel
+    player: wavelink.Player = interaction.guild.voice_client
+    if not player:
+        player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+    elif player.channel != channel:
+        await player.move_to(channel)
+    player.home_channel = interaction.channel
+    await interaction.response.send_message(f"👋 joined <#{channel.id}>.")
+
+@bot.tree.command(name="leave", description="Leave the voice channel")
+async def slash_leave(interaction: discord.Interaction):
+    player: wavelink.Player = interaction.guild.voice_client
+    if not player:
+        return await interaction.response.send_message("i'm not in voice.")
+    await player.disconnect()
+    await interaction.response.send_message("👋 left voice.")
+
 @bot.tree.command(name="queue", description="Show the queue")
 async def slash_queue(interaction: discord.Interaction):
     player: wavelink.Player = interaction.guild.voice_client
