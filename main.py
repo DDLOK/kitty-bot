@@ -49,9 +49,14 @@ class KittyBot(commands.Bot):
         self.playlists = load_playlists()  # {user_id_str: {playlist_name: [urls...]}}
 
     async def setup_hook(self):
-        # Prefer env-provided node, but always include serenetia (known working) as backup
-        nodes = [wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD)]
-        if LAVALINK_URI != "https://lavalinkv4.serenetia.com:443":
+        # Hardcoded known-working node (serenetia). Env vars are ignored if they
+        # point at the dead ajieblogs node — that one always 404/429s now.
+        BLACKLISTED = {"lava-v4.ajieblogs.eu.org"}
+        nodes = []
+        if LAVALINK_URI and not any(b in LAVALINK_URI for b in BLACKLISTED):
+            nodes.append(wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD))
+        # Always add serenetia as backup (and primary if env is blacklisted)
+        if not any("serenetia" in (n.uri or "") for n in nodes):
             nodes.append(wavelink.Node(
                 uri="https://lavalinkv4.serenetia.com:443",
                 password="https://dsc.gg/ajidevserver",
@@ -200,7 +205,7 @@ class MusicControls(discord.ui.View):
         await interaction.response.defer()
         await self.update_display(interaction)
 
-    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=1)
     async def shuffle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if len(self.player.queue) >= 2:
             self.player.queue.shuffle()
