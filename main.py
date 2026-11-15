@@ -152,6 +152,35 @@ async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
     print(f"Lavalink node ready: {payload.node.uri}")
 
 @bot.event
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    """When someone joins the voice channel the bot is in, DM them the webplay link."""
+    if member.bot:
+        return
+    if before.channel == after.channel:
+        return  # Didn't change channels
+    if after.channel is None:
+        return  # They left
+    bot_vc = member.guild.me.voice.channel if member.guild.me and member.guild.me.voice else None
+    if not bot_vc or after.channel != bot_vc:
+        return  # They didn't join the bot's channel
+    # Fetch the player for this guild
+    player: Optional[wavelink.Player] = member.guild.voice_client
+    if not player or not player.current:
+        return
+    track = player.current
+    share_url = getattr(track, "_share_url", None)
+    try:
+        e = pink_embed("🎶 Now playing in your voice channel")
+        e.description = f"**{track.title}**\nby {track.author} — `{fmt_duration(track.length)}`"
+        if track.artwork:
+            e.set_thumbnail(url=track.artwork)
+        if share_url:
+            e.add_field(name="🎵 Open in webplay", value=share_url, inline=False)
+        await member.send(embed=e)
+    except discord.Forbidden:
+        pass  # DMs closed
+
+@bot.event
 async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload):
     player: wavelink.Player = payload.player
     if not player:

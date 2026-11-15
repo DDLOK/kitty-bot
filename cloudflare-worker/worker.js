@@ -72,8 +72,7 @@ export default {
 
       try {
         const song = JSON.parse(raw);
-        // Burn the link (one-time use)
-        await env.SONGS.delete(id);
+        // Persistent link — no deletion, link stays usable until KV TTL (7 days)
         return htmlPage(renderPage(song, id, url.origin, session));
       } catch {
         return htmlPage(expiredPage(), 500);
