@@ -92,11 +92,10 @@ function fmtDuration(ms) {
   return `${m}:${(s % 60).toString().padStart(2, '0')}`;
 }
 
-function ytEmbed(uri) {
-  if (!uri) return '';
+function extractYtId(uri) {
+  if (!uri) return null;
   const m = uri.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
-  if (!m) return '';
-  return `<iframe class="player" src="https://www.youtube.com/embed/${m[1]}?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+  return m ? m[1] : null;
 }
 
 function renderPage(song, id, origin) {
@@ -107,7 +106,7 @@ function renderPage(song, id, origin) {
   const duration = fmtDuration(song.duration_ms);
   const requestedBy = esc(song.requested_by || '');
   const share = esc(`${origin}/s/${id}`);
-  const embed = ytEmbed(song.uri);
+  const ytId = extractYtId(song.uri);
 
   return `<!doctype html>
 <html lang="en">
@@ -120,7 +119,7 @@ function renderPage(song, id, origin) {
 ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
 <meta name="theme-color" content="#ff66cc">
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: dark; --pink: #ff66cc; --pink-soft: rgba(255,102,204,0.15); --pink-ring: rgba(255,102,204,0.4); }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -135,99 +134,302 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   .card {
     background: rgba(255, 255, 255, 0.04);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 102, 204, 0.3);
+    border: 1px solid var(--pink-ring);
     border-radius: 24px;
-    max-width: 540px;
+    max-width: 560px;
     width: 100%;
     overflow: hidden;
-    box-shadow: 0 30px 80px rgba(255, 102, 204, 0.15);
+    box-shadow: 0 30px 80px rgba(255, 102, 204, 0.2);
   }
-  .art {
+  .player-wrap {
+    position: relative;
     width: 100%;
     aspect-ratio: 16/9;
-    background-size: cover;
-    background-position: center;
-    position: relative;
+    background: #000;
   }
-  .art::after {
-    content: '';
+  #yt-player, .art-fallback {
     position: absolute;
     inset: 0;
-    background: linear-gradient(to top, rgba(0,0,0,0.7), transparent 50%);
-  }
-  .player {
     width: 100%;
-    aspect-ratio: 16/9;
+    height: 100%;
     border: none;
-    display: block;
+    background-size: cover;
+    background-position: center;
   }
-  .meta {
-    padding: 24px 28px;
-  }
-  h1 {
-    font-size: 24px;
-    margin-bottom: 6px;
-    color: #ff66cc;
-  }
-  .author {
-    font-size: 15px;
-    opacity: 0.7;
-    margin-bottom: 18px;
-  }
-  .row {
+  .meta { padding: 20px 24px 8px; }
+  h1 { font-size: 22px; margin-bottom: 4px; color: var(--pink); line-height: 1.2; }
+  .author { font-size: 14px; opacity: 0.7; margin-bottom: 14px; }
+
+  /* Progress bar */
+  .progress-wrap {
+    padding: 0 24px 10px;
     display: flex;
-    gap: 12px;
-    margin-top: 16px;
+    align-items: center;
+    gap: 10px;
+  }
+  .time {
+    font-size: 11px;
+    font-family: 'SF Mono', Monaco, monospace;
+    opacity: 0.6;
+    min-width: 36px;
+  }
+  .progress {
+    flex: 1;
+    height: 5px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 999px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--pink);
+    border-radius: 999px;
+    transition: width 0.3s linear;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 4px 24px 18px;
+  }
+  .ctrl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--pink-soft);
+    color: var(--pink);
+    border: 1px solid var(--pink-ring);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.15s;
+  }
+  .ctrl:hover { background: rgba(255,102,204,0.3); transform: scale(1.08); }
+  .ctrl.primary {
+    width: 56px; height: 56px;
+    background: var(--pink);
+    color: #000;
+    font-size: 20px;
+  }
+  .ctrl.primary:hover { background: #ff80d9; }
+
+  .vol-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 12px;
+  }
+  .vol-slider {
+    -webkit-appearance: none;
+    width: 70px;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 999px;
+    outline: none;
+  }
+  .vol-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--pink);
+    cursor: pointer;
+  }
+  .vol-slider::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--pink);
+    cursor: pointer;
+    border: none;
+  }
+
+  /* Extra actions */
+  .actions {
+    display: flex;
+    gap: 10px;
+    padding: 0 24px 16px;
     flex-wrap: wrap;
+    justify-content: center;
   }
   .btn {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 18px;
+    gap: 6px;
+    padding: 8px 14px;
     border-radius: 999px;
-    background: rgba(255, 102, 204, 0.15);
-    color: #ff66cc;
+    background: var(--pink-soft);
+    color: var(--pink);
     text-decoration: none;
     font-weight: 600;
-    font-size: 14px;
-    border: 1px solid rgba(255, 102, 204, 0.4);
+    font-size: 12px;
+    border: 1px solid var(--pink-ring);
+    cursor: pointer;
     transition: all 0.15s;
   }
-  .btn:hover { background: rgba(255, 102, 204, 0.3); transform: translateY(-1px); }
-  .btn.primary { background: #ff66cc; color: #000; }
+  .btn:hover { background: rgba(255,102,204,0.3); }
+
   .footer {
-    padding: 14px 28px;
+    padding: 12px 24px;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
-    font-size: 12px;
+    font-size: 11px;
     opacity: 0.5;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 8px;
   }
   .share {
     font-family: 'SF Mono', Monaco, monospace;
-    font-size: 11px;
-    opacity: 0.6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 480px) {
+    .controls { gap: 4px; }
+    .ctrl { width: 40px; height: 40px; }
+    .ctrl.primary { width: 50px; height: 50px; }
+    .vol-wrap { margin-left: 4px; }
+    .vol-slider { width: 50px; }
   }
 </style>
 </head>
 <body>
   <div class="card">
-    ${embed || (thumb ? `<div class="art" style="background-image: url('${thumb}')"></div>` : '')}
+    <div class="player-wrap">
+      ${ytId
+        ? `<div id="yt-player"></div>`
+        : `<div class="art-fallback" style="background-image: url('${thumb}')"></div>`
+      }
+    </div>
+
     <div class="meta">
       <h1>${title}</h1>
       <div class="author">${author}${duration ? ' • ' + duration : ''}</div>
-      <div class="row">
-        ${uri ? `<a class="btn primary" href="${uri}" target="_blank">▶ Open source</a>` : ''}
-        <a class="btn" href="javascript:navigator.clipboard.writeText('${share}').then(()=>this.textContent='✓ copied')">🔗 Copy link</a>
+    </div>
+
+    ${ytId ? `
+    <div class="progress-wrap">
+      <span class="time" id="time-cur">0:00</span>
+      <div class="progress" id="progress"><div class="progress-bar" id="bar"></div></div>
+      <span class="time" id="time-tot">0:00</span>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl" id="back10" title="Back 10s">⏪</button>
+      <button class="ctrl primary" id="playpause" title="Play/Pause">⏸</button>
+      <button class="ctrl" id="fwd10" title="Forward 10s">⏩</button>
+      <div class="vol-wrap">
+        <span>🔊</span>
+        <input type="range" min="0" max="100" value="80" class="vol-slider" id="vol">
       </div>
     </div>
+    ` : ''}
+
+    <div class="actions">
+      ${uri ? `<a class="btn" href="${uri}" target="_blank">▶ Open source</a>` : ''}
+      <button class="btn" onclick="navigator.clipboard.writeText('${share}').then(()=>this.textContent='✓ copied')">🔗 Copy link</button>
+      ${ytId ? `<button class="btn" id="fullscreen">⛶ Fullscreen</button>` : ''}
+    </div>
+
     <div class="footer">
-      <span>${requestedBy ? 'queued by ' + requestedBy : ''}</span>
+      <span>${requestedBy ? 'queued by ' + requestedBy : 'kitty webplay'}</span>
       <span class="share">${share}</span>
     </div>
   </div>
+
+  ${ytId ? `
+  <script>
+    let player;
+    let progressTimer;
+
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('yt-player', {
+        videoId: '${ytId}',
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          modestbranding: 1,
+          rel: 0,
+          showinfo: 0,
+          iv_load_policy: 3,
+        },
+        events: {
+          onReady: onReady,
+          onStateChange: onStateChange,
+        },
+      });
+    }
+
+    function onReady(e) {
+      e.target.setVolume(80);
+      document.getElementById('time-tot').textContent = fmt(e.target.getDuration());
+      progressTimer = setInterval(updateProgress, 500);
+    }
+
+    function onStateChange(e) {
+      const btn = document.getElementById('playpause');
+      if (e.data === YT.PlayerState.PLAYING) btn.textContent = '⏸';
+      else if (e.data === YT.PlayerState.PAUSED) btn.textContent = '▶';
+      else if (e.data === YT.PlayerState.ENDED) btn.textContent = '↻';
+    }
+
+    function updateProgress() {
+      if (!player || !player.getCurrentTime) return;
+      const cur = player.getCurrentTime();
+      const tot = player.getDuration();
+      if (!tot) return;
+      const pct = (cur / tot) * 100;
+      document.getElementById('bar').style.width = pct + '%';
+      document.getElementById('time-cur').textContent = fmt(cur);
+    }
+
+    function fmt(s) {
+      s = Math.floor(s);
+      const m = Math.floor(s / 60);
+      return m + ':' + String(s % 60).padStart(2, '0');
+    }
+
+    document.getElementById('playpause').onclick = () => {
+      const state = player.getPlayerState();
+      if (state === YT.PlayerState.PLAYING) player.pauseVideo();
+      else player.playVideo();
+    };
+    document.getElementById('back10').onclick = () => {
+      player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
+    };
+    document.getElementById('fwd10').onclick = () => {
+      player.seekTo(Math.min(player.getDuration(), player.getCurrentTime() + 10), true);
+    };
+    document.getElementById('vol').oninput = (e) => {
+      player.setVolume(e.target.value);
+    };
+    document.getElementById('progress').onclick = (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      player.seekTo(pct * player.getDuration(), true);
+    };
+    const fsBtn = document.getElementById('fullscreen');
+    if (fsBtn) fsBtn.onclick = () => {
+      const el = document.getElementById('yt-player');
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    };
+
+    // Load YT API
+    const tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    document.body.appendChild(tag);
+  </script>
+  ` : ''}
 </body>
 </html>`;
 }
