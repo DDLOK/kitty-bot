@@ -882,16 +882,21 @@ async def bonk(ctx, member: discord.Member): await _action(ctx, member, "bonks",
 @app_commands.describe(query="URL or search terms")
 async def slash_play(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
-    ctx = await bot.get_context(interaction.message) if interaction.message else None
-    # Minimal shim for slash command
+    # Check nodes first
+    connected = [n for n in wavelink.Pool.nodes.values() if n.status.name == "CONNECTED"]
+    if not connected:
+        return await interaction.followup.send("🎵 all music servers are down right now, try again in a minute.")
     if not interaction.user.voice:
         return await interaction.followup.send("join a voice channel first, hun.")
     channel = interaction.user.voice.channel
     player: wavelink.Player = interaction.guild.voice_client
-    if not player:
-        player = await channel.connect(cls=wavelink.Player, self_deaf=True)
-    elif player.channel != channel:
-        await player.move_to(channel)
+    try:
+        if not player:
+            player = await channel.connect(cls=wavelink.Player, self_deaf=True)
+        elif player.channel != channel:
+            await player.move_to(channel)
+    except wavelink.exceptions.InvalidNodeException:
+        return await interaction.followup.send("🎵 music server just dropped, try again shortly.")
     player.home_channel = interaction.channel
 
     try:
