@@ -1645,7 +1645,7 @@ async def subbrute(ctx, domain: str):
             await working.edit(content=header, attachments=[file])
     except Exception as ex: await working.edit(content=f"💀 subbrute failed: `{ex}`")
 
-@bot.command(name="whois")
+@bot.command(name="domain", aliases=["rdap"])
 async def whois_cmd(ctx, domain: str):
     try:
         j = await fetch_json(f"https://rdap.org/domain/{domain}")
