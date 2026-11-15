@@ -26,16 +26,24 @@ export default {
       return json({ id, url: `${url.origin}/s/${id}` });
     }
 
-    // ---- Fetch a song page ----
+    // ---- Fetch a song page (ONE-TIME USE) ----
     if (url.pathname.startsWith('/s/')) {
       const id = url.pathname.slice(3);
       const raw = await env.SONGS.get(id);
-      if (!raw) return htmlPage(notFoundPage(), 404);
+      if (!raw) return htmlPage(expiredPage(), 410);
       try {
         const song = JSON.parse(raw);
+        // Skip consumption for link preview bots (Discord, Twitter, etc)
+        // so first real human click still gets the page.
+        const ua = (request.headers.get('User-Agent') || '').toLowerCase();
+        const isBot = /discordbot|twitterbot|facebookexternalhit|slackbot|telegrambot|whatsapp|linkedinbot|bot\/|crawler|spider/.test(ua);
+        if (!isBot) {
+          // Burn the link — one-time use
+          await env.SONGS.delete(id);
+        }
         return htmlPage(renderPage(song, id, url.origin));
       } catch {
-        return htmlPage(notFoundPage(), 500);
+        return htmlPage(expiredPage(), 500);
       }
     }
 
@@ -241,6 +249,15 @@ function landingPage(origin) {
 
 function notFoundPage() {
   return `<!doctype html><html><body style="font-family:system-ui;background:#0a0514;color:#fff;display:grid;place-items:center;height:100vh;margin:0">
-<div style="text-align:center"><h1 style="color:#ff66cc;font-size:72px">404</h1><p>Song not found or expired (7 day TTL).</p></div>
+<div style="text-align:center"><h1 style="color:#ff66cc;font-size:72px">404</h1><p>Song not found.</p></div>
 </body></html>`;
+}
+
+function expiredPage() {
+  return `<!doctype html><html><body style="font-family:system-ui;background:#0a0514;color:#fff;display:grid;place-items:center;height:100vh;margin:0">
+<div style="text-align:center;max-width:400px;padding:20px">
+<h1 style="color:#ff66cc;font-size:56px;margin-bottom:12px">💨</h1>
+<h2 style="font-size:20px;margin-bottom:8px">one-time link</h2>
+<p style="opacity:0.6">This link has been used. Ask the bot to play again for a new one.</p>
+</div></body></html>`;
 }

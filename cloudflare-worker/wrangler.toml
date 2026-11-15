@@ -5,7 +5,7 @@ compatibility_date = "2025-01-01"
 # After running `wrangler kv:namespace create SONGS`, paste the returned id below.
 [[kv_namespaces]]
 binding = "SONGS"
-id = "PASTE_KV_NAMESPACE_ID_HERE"
+id = "1b37785efa35424b8790471627e5588f"
 
 # Set the auth secret with:
 #   wrangler secret put SECRET

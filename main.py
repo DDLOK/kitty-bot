@@ -287,13 +287,12 @@ async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel
     """Send/refresh the music control panel. Safe to call anywhere."""
     if not player or not player.current or not channel:
         return None
-    # Generate (or reuse cached) share URL — prefers Cloudflare Worker, falls back to is.gd
+    # Generate a FRESH share URL every panel send — one-time links don't persist
     track = player.current
-    if not getattr(track, "_share_url", None):
-        try:
-            cf = await cloudflare_page(track)
-            track._share_url = cf or await shorten_url(track.uri)
-        except: pass
+    try:
+        cf = await cloudflare_page(track)
+        track._share_url = cf or await shorten_url(track.uri)
+    except: pass
     prev = getattr(player, "now_playing_msg", None)
     if prev:
         try: await prev.delete()
