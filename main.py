@@ -1373,6 +1373,25 @@ async def cat(ctx):
         await ctx.send(embed=e)
     except: await bad(ctx, "cats are hiding.")
 
+@bot.command(name="kitty", aliases=["kitten"])
+async def kitty_cmd(ctx):
+    """Random cute kitten pic."""
+    import time as _t
+    url = f"https://cataas.com/cat/cute?{_t.time()}"
+    e = pink_embed()
+    e.set_image(url=url)
+    e.set_footer(text="🐱 awww")
+    await ctx.send(embed=e)
+
+@bot.tree.command(name="kitty", description="Send a cute kitten picture")
+async def slash_kitty(interaction: discord.Interaction):
+    import time as _t
+    url = f"https://cataas.com/cat/cute?{_t.time()}"
+    e = pink_embed()
+    e.set_image(url=url)
+    e.set_footer(text="🐱 awww")
+    await interaction.response.send_message(embed=e)
+
 @bot.command(name="dog")
 async def dog(ctx):
     try:
