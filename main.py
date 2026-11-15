@@ -464,7 +464,7 @@ async def on_command_error(ctx, error):
 
 # =============== HELP ===============
 
-@bot.command(name="help", aliases=["h", "commands"])
+@bot.hybrid_command(name="help", aliases=["h", "commands"])
 async def help_cmd(ctx):
     groups = {
         "Moderation": ["clear", "ban", "unban", "kick", "mute", "unmute", "warn", "lock", "unlock", "slowmode"],
@@ -480,7 +480,7 @@ async def help_cmd(ctx):
 
 # =============== MODERATION ===============
 
-@bot.command(name="clear", aliases=["purge", "c"])
+@bot.hybrid_command(name="clear", aliases=["purge", "c"])
 @commands.has_permissions(manage_messages=True)
 @commands.bot_has_permissions(manage_messages=True)
 async def clear(ctx, amount: int = 100):
@@ -498,21 +498,21 @@ async def clear(ctx, amount: int = 100):
     try: await note.delete()
     except: pass
 
-@bot.command(name="ban")
+@bot.hybrid_command(name="ban")
 @commands.has_permissions(ban_members=True)
 @commands.bot_has_permissions(ban_members=True)
 async def ban(ctx, member: discord.Member, *, reason: str = "no reason given"):
     await member.ban(reason=reason)
     await ok(ctx, f"🔨 banned **{member}** — {reason}")
 
-@bot.command(name="unban")
+@bot.hybrid_command(name="unban")
 @commands.has_permissions(ban_members=True)
 async def unban(ctx, user_id: int, *, reason: str = "no reason"):
     user = await bot.fetch_user(user_id)
     await ctx.guild.unban(user, reason=reason)
     await ok(ctx, f"🕊️ unbanned **{user}**.")
 
-@bot.command(name="kick")
+@bot.hybrid_command(name="kick")
 @commands.has_permissions(kick_members=True)
 @commands.bot_has_permissions(kick_members=True)
 async def kick(ctx, member: discord.Member, *, reason: str = "no reason given"):
@@ -529,7 +529,7 @@ def parse_duration(raw: str) -> Optional[int]:
     mult = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
     return n * mult.get(unit, 60)
 
-@bot.command(name="mute", aliases=["timeout", "to"])
+@bot.hybrid_command(name="mute", aliases=["timeout", "to"])
 @commands.has_permissions(moderate_members=True)
 @commands.bot_has_permissions(moderate_members=True)
 async def mute(ctx, member: discord.Member, duration: str, *, reason: str = "no reason"):
@@ -539,35 +539,35 @@ async def mute(ctx, member: discord.Member, duration: str, *, reason: str = "no 
     await member.timeout(dt.timedelta(seconds=sec), reason=reason)
     await ok(ctx, f"🤫 **{member}** on ice for {duration} — {reason}")
 
-@bot.command(name="unmute", aliases=["untimeout"])
+@bot.hybrid_command(name="unmute", aliases=["untimeout"])
 @commands.has_permissions(moderate_members=True)
 @commands.bot_has_permissions(moderate_members=True)
 async def unmute(ctx, member: discord.Member):
     await member.timeout(None)
     await ok(ctx, f"🔊 **{member}** off the ice.")
 
-@bot.command(name="warn")
+@bot.hybrid_command(name="warn")
 @commands.has_permissions(moderate_members=True)
 async def warn(ctx, member: discord.Member, *, reason: str):
     try: await member.send(f"⚠️ you got warned in **{ctx.guild.name}** — {reason}")
     except: pass
     await ok(ctx, f"⚠️ warned **{member}** — {reason}")
 
-@bot.command(name="lock")
+@bot.hybrid_command(name="lock")
 @commands.has_permissions(manage_channels=True)
 @commands.bot_has_permissions(manage_channels=True)
 async def lock(ctx):
     await ctx.channel.set_permissions(ctx.guild.default_role, send_messages=False)
     await ok(ctx, "🔒 locked.")
 
-@bot.command(name="unlock")
+@bot.hybrid_command(name="unlock")
 @commands.has_permissions(manage_channels=True)
 @commands.bot_has_permissions(manage_channels=True)
 async def unlock(ctx):
     await ctx.channel.set_permissions(ctx.guild.default_role, send_messages=None)
     await ok(ctx, "🔓 unlocked.")
 
-@bot.command(name="slowmode", aliases=["slow"])
+@bot.hybrid_command(name="slowmode", aliases=["slow"])
 @commands.has_permissions(manage_channels=True)
 @commands.bot_has_permissions(manage_channels=True)
 async def slowmode(ctx, seconds: int = 0):
@@ -589,7 +589,7 @@ async def ensure_player(ctx) -> Optional[wavelink.Player]:
     player.home_channel = ctx.channel
     return player
 
-@bot.command(name="play", aliases=["p"])
+@bot.hybrid_command(name="play", aliases=["p"])
 async def play(ctx, *, query: str):
     player = await ensure_player(ctx)
     if not player: return
@@ -612,14 +612,14 @@ async def play(ctx, *, query: str):
     except Exception as e:
         await bad(ctx, f"💀 play failed: `{e}`")
 
-@bot.command(name="skip", aliases=["s", "next"])
+@bot.hybrid_command(name="skip", aliases=["s", "next"])
 async def skip(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "nothing playing.")
     await player.skip(force=True)
     await ok(ctx, "⏭️ skipped.")
 
-@bot.command(name="stop")
+@bot.hybrid_command(name="stop")
 async def stop(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "nothing playing.")
@@ -628,21 +628,21 @@ async def stop(ctx):
     await player.disconnect()
     await ok(ctx, "⏹️ stopped and left.")
 
-@bot.command(name="pause")
+@bot.hybrid_command(name="pause")
 async def pause(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "nothing playing.")
     await player.pause(True)
     await ok(ctx, "⏸️ paused.")
 
-@bot.command(name="resume", aliases=["unpause"])
+@bot.hybrid_command(name="resume", aliases=["unpause"])
 async def resume(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "nothing to resume.")
     await player.pause(False)
     await ok(ctx, "▶️ resumed.")
 
-@bot.command(name="queue", aliases=["q"])
+@bot.hybrid_command(name="queue", aliases=["q"])
 async def queue(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player or not player.queue: return await bad(ctx, "queue empty.")
@@ -654,7 +654,7 @@ async def queue(ctx):
     extra = f"\n*…and {len(player.queue) - 15} more*" if len(player.queue) > 15 else ""
     await ctx.send(embed=pink_embed("📋 queue", "\n".join(lines) + extra))
 
-@bot.command(name="nowplaying", aliases=["np"])
+@bot.hybrid_command(name="nowplaying", aliases=["np"])
 async def nowplaying(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player or not player.current: return await bad(ctx, "nothing playing.")
@@ -663,7 +663,7 @@ async def nowplaying(ctx):
     if t.artwork: e.set_thumbnail(url=t.artwork)
     await ctx.send(embed=e)
 
-@bot.command(name="volume", aliases=["vol"])
+@bot.hybrid_command(name="volume", aliases=["vol"])
 async def volume(ctx, level: int):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "nothing playing.")
@@ -671,26 +671,26 @@ async def volume(ctx, level: int):
     await player.set_volume(level)
     await ok(ctx, f"🔊 volume: {level}%")
 
-@bot.command(name="loop")
+@bot.hybrid_command(name="loop")
 async def loop_cmd(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "nothing playing.")
     player.queue.mode = wavelink.QueueMode.loop_all if player.queue.mode != wavelink.QueueMode.loop_all else wavelink.QueueMode.normal
     await ok(ctx, f"🔁 loop {'on' if player.queue.mode == wavelink.QueueMode.loop_all else 'off'}.")
 
-@bot.command(name="shuffle")
+@bot.hybrid_command(name="shuffle")
 async def shuffle(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player or len(player.queue) < 2: return await bad(ctx, "need 2+ in queue.")
     player.queue.shuffle()
     await ok(ctx, "🔀 shuffled.")
 
-@bot.command(name="join")
+@bot.hybrid_command(name="join")
 async def join(ctx):
     player = await ensure_player(ctx)
     if player: await ok(ctx, f"👋 joined <#{player.channel.id}>.")
 
-@bot.command(name="leave", aliases=["disconnect", "dc"])
+@bot.hybrid_command(name="leave", aliases=["disconnect", "dc"])
 async def leave(ctx):
     player: wavelink.Player = ctx.voice_client
     if not player: return await bad(ctx, "i'm not in voice.")
@@ -699,11 +699,11 @@ async def leave(ctx):
 
 # =============== UTILITY ===============
 
-@bot.command(name="ping")
+@bot.hybrid_command(name="ping")
 async def ping(ctx):
     await ok(ctx, f"🏓 **{round(bot.latency * 1000)}ms** ws.")
 
-@bot.command(name="userinfo", aliases=["ui", "whois"])
+@bot.hybrid_command(name="userinfo", aliases=["ui", "whois"])
 async def userinfo(ctx, member: discord.Member = None):
     m = member or ctx.author
     roles = " ".join(r.mention for r in m.roles if r.id != ctx.guild.id) or "None"
@@ -715,7 +715,7 @@ async def userinfo(ctx, member: discord.Member = None):
     e.add_field(name=f"Roles [{len(m.roles)-1}]", value=roles[:1024], inline=False)
     await ctx.send(embed=e)
 
-@bot.command(name="serverinfo", aliases=["si"])
+@bot.hybrid_command(name="serverinfo", aliases=["si"])
 async def serverinfo(ctx):
     g = ctx.guild
     e = pink_embed(g.name)
@@ -729,14 +729,14 @@ async def serverinfo(ctx):
     e.add_field(name="Boosts", value=f"{g.premium_subscription_count} (Tier {g.premium_tier})", inline=True)
     await ctx.send(embed=e)
 
-@bot.command(name="avatar", aliases=["av", "pfp"])
+@bot.hybrid_command(name="avatar", aliases=["av", "pfp"])
 async def avatar(ctx, member: discord.Member = None):
     m = member or ctx.author
     e = pink_embed(str(m))
     e.set_image(url=m.display_avatar.url)
     await ctx.send(embed=e)
 
-@bot.command(name="banner")
+@bot.hybrid_command(name="banner")
 async def banner(ctx, member: discord.Member = None):
     m = member or ctx.author
     u = await bot.fetch_user(m.id)
@@ -745,7 +745,7 @@ async def banner(ctx, member: discord.Member = None):
     e.set_image(url=u.banner.url)
     await ctx.send(embed=e)
 
-@bot.command(name="embed")
+@bot.hybrid_command(name="embed")
 @commands.has_permissions(manage_messages=True)
 async def embed_cmd(ctx, *, text: str):
     parts = text.split("|", 1)
@@ -754,20 +754,20 @@ async def embed_cmd(ctx, *, text: str):
     await ctx.message.delete()
     await ctx.send(embed=pink_embed(title, desc))
 
-@bot.command(name="say")
+@bot.hybrid_command(name="say")
 @commands.has_permissions(manage_messages=True)
 async def say(ctx, *, text: str):
     await ctx.message.delete()
     await ctx.send(text)
 
-@bot.command(name="announce")
+@bot.hybrid_command(name="announce")
 @commands.has_permissions(mention_everyone=True)
 async def announce(ctx, *, text: str):
     await ctx.message.delete()
     e = pink_embed("📢 Announcement", text)
     await ctx.send(content="@everyone", embed=e, allowed_mentions=discord.AllowedMentions(everyone=True))
 
-@bot.command(name="botinfo", aliases=["bi"])
+@bot.hybrid_command(name="botinfo", aliases=["bi"])
 async def botinfo(ctx):
     e = pink_embed(f"{bot.user}")
     e.set_thumbnail(url=bot.user.display_avatar.url)
@@ -776,17 +776,17 @@ async def botinfo(ctx):
     e.add_field(name="Built by", value="olivia 💅", inline=True)
     await ctx.send(embed=e)
 
-@bot.command(name="invite")
+@bot.hybrid_command(name="invite")
 async def invite(ctx):
     await ok(ctx, f"https://discord.com/oauth2/authorize?client_id={bot.user.id}&scope=bot+applications.commands&permissions=1099780074743")
 
-@bot.command(name="members", aliases=["membercount"])
+@bot.hybrid_command(name="members", aliases=["membercount"])
 async def members(ctx):
     await ok(ctx, f"👥 **{ctx.guild.member_count}** of your finest.")
 
 # =============== FUN ===============
 
-@bot.command(name="snipe")
+@bot.hybrid_command(name="snipe")
 async def snipe(ctx):
     s = bot.snipes.get(ctx.channel.id)
     if not s: return await bad(ctx, "nothing to snipe.")
@@ -795,7 +795,7 @@ async def snipe(ctx):
     e.set_footer(text=f"deleted {dt.datetime.now().strftime('%H:%M:%S')}")
     await ctx.send(embed=e)
 
-@bot.command(name="editsnipe", aliases=["esnipe"])
+@bot.hybrid_command(name="editsnipe", aliases=["esnipe"])
 async def editsnipe(ctx):
     pair = bot.edit_snipes.get(ctx.channel.id)
     if not pair: return await bad(ctx, "no edits to snipe.")
@@ -806,34 +806,34 @@ async def editsnipe(ctx):
     e.add_field(name="After", value=after.content or "*(empty)*", inline=False)
     await ctx.send(embed=e)
 
-@bot.command(name="afk")
+@bot.hybrid_command(name="afk")
 async def afk_cmd(ctx, *, reason: str = "afk"):
     bot.afk[ctx.author.id] = (reason, dt.datetime.now(dt.timezone.utc))
     await ok(ctx, f"💤 set afk — {reason}")
 
-@bot.command(name="8ball", aliases=["8", "eightball"])
+@bot.hybrid_command(name="8ball", aliases=["8", "eightball"])
 async def eightball(ctx, *, question: str):
     answers = ["absolutely babe", "no chance", "yeah probably", "girl... no", "ask again when sober",
                "the stars say yes", "the stars say absolutely not", "100%", "lmao no",
                "maybe. flip a coin.", "you already know", "nope nope nope"]
     await ok(ctx, f"🎱 {random.choice(answers)}")
 
-@bot.command(name="coinflip", aliases=["flip", "cf"])
+@bot.hybrid_command(name="coinflip", aliases=["flip", "cf"])
 async def coinflip(ctx):
     await ok(ctx, "🪙 heads." if random.random() < 0.5 else "🪙 tails.")
 
-@bot.command(name="dice", aliases=["roll"])
+@bot.hybrid_command(name="dice", aliases=["roll"])
 async def dice(ctx, sides: int = 6):
     sides = max(2, min(1000, sides))
     await ok(ctx, f"🎲 {random.randint(1, sides)} (d{sides})")
 
-@bot.command(name="choose", aliases=["pick"])
+@bot.hybrid_command(name="choose", aliases=["pick"])
 async def choose(ctx, *, text: str):
     opts = [s.strip() for s in text.split("|") if s.strip()]
     if len(opts) < 2: return await bad(ctx, "2+ options separated by `|`.")
     await ok(ctx, f"✨ {random.choice(opts)}")
 
-@bot.command(name="poll")
+@bot.hybrid_command(name="poll")
 async def poll(ctx, *, question: str):
     e = pink_embed("📊 poll", question)
     e.set_footer(text=f"by {ctx.author}")
@@ -842,14 +842,14 @@ async def poll(ctx, *, question: str):
     await m.add_reaction("❌")
     await ctx.message.delete()
 
-@bot.command(name="gay")
+@bot.hybrid_command(name="gay")
 async def gay(ctx, member: discord.Member = None):
     m = member or ctx.author
     pct = random.randint(0, 100)
     bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
     await ok(ctx, f"🌈 **{m.name}** is **{pct}%** gay\n`{bar}`")
 
-@bot.command(name="ship")
+@bot.hybrid_command(name="ship")
 async def ship(ctx, a: discord.Member, b: discord.Member):
     pct = random.randint(0, 100)
     name = a.name[:len(a.name)//2+1] + b.name[len(b.name)//2:]
@@ -858,19 +858,19 @@ async def ship(ctx, a: discord.Member, b: discord.Member):
 async def _action(ctx, target: discord.Member, verb: str, emoji: str):
     await ok(ctx, f"{emoji} **{ctx.author.name}** {verb} **{target.name}**.")
 
-@bot.command(name="hug")
+@bot.hybrid_command(name="hug")
 async def hug(ctx, member: discord.Member): await _action(ctx, member, "hugs", "🫂")
 
-@bot.command(name="slap")
+@bot.hybrid_command(name="slap")
 async def slap(ctx, member: discord.Member): await _action(ctx, member, "slaps", "👋")
 
-@bot.command(name="kiss")
+@bot.hybrid_command(name="kiss")
 async def kiss(ctx, member: discord.Member): await _action(ctx, member, "kisses", "💋")
 
-@bot.command(name="pat")
+@bot.hybrid_command(name="pat")
 async def pat(ctx, member: discord.Member): await _action(ctx, member, "pats", "🫶")
 
-@bot.command(name="bonk")
+@bot.hybrid_command(name="bonk")
 async def bonk(ctx, member: discord.Member): await _action(ctx, member, "bonks", "🔨")
 
 # =============== SLASH COMMANDS (music subset) ===============
@@ -1141,7 +1141,7 @@ async def fetch_text(url: str, headers: dict = None):
 
 # =============== MORE MODERATION ===============
 
-@bot.command(name="softban")
+@bot.hybrid_command(name="softban")
 @commands.has_permissions(ban_members=True)
 @commands.bot_has_permissions(ban_members=True)
 async def softban(ctx, member: discord.Member, *, reason: str = "softban"):
@@ -1149,21 +1149,21 @@ async def softban(ctx, member: discord.Member, *, reason: str = "softban"):
     await ctx.guild.unban(member, reason="softban-complete")
     await ok(ctx, f"🧼 softbanned **{member}** — mess cleaned.")
 
-@bot.command(name="hide")
+@bot.hybrid_command(name="hide")
 @commands.has_permissions(manage_channels=True)
 @commands.bot_has_permissions(manage_channels=True)
 async def hide(ctx):
     await ctx.channel.set_permissions(ctx.guild.default_role, view_channel=False)
     await ok(ctx, "🙈 hidden.")
 
-@bot.command(name="unhide", aliases=["show"])
+@bot.hybrid_command(name="unhide", aliases=["show"])
 @commands.has_permissions(manage_channels=True)
 @commands.bot_has_permissions(manage_channels=True)
 async def unhide(ctx):
     await ctx.channel.set_permissions(ctx.guild.default_role, view_channel=None)
     await ok(ctx, "👀 visible.")
 
-@bot.command(name="nuke")
+@bot.hybrid_command(name="nuke")
 @commands.has_permissions(manage_channels=True)
 @commands.bot_has_permissions(manage_channels=True)
 async def nuke(ctx):
@@ -1175,7 +1175,7 @@ async def nuke(ctx):
     await ctx.channel.delete(reason="nuke")
     await new_ch.send("💥 fresh slate.")
 
-@bot.command(name="pin")
+@bot.hybrid_command(name="pin")
 @commands.has_permissions(manage_messages=True)
 @commands.bot_has_permissions(manage_messages=True)
 async def pin_cmd(ctx):
@@ -1185,7 +1185,7 @@ async def pin_cmd(ctx):
     await msg.pin()
     await ok(ctx, "📌 pinned.")
 
-@bot.command(name="unpin")
+@bot.hybrid_command(name="unpin")
 @commands.has_permissions(manage_messages=True)
 async def unpin_cmd(ctx):
     if not ctx.message.reference:
@@ -1196,7 +1196,7 @@ async def unpin_cmd(ctx):
 
 # =============== ROLES ===============
 
-@bot.group(name="role", invoke_without_command=True)
+@bot.hybrid_group(name="role", invoke_without_command=True)
 @commands.has_permissions(manage_roles=True)
 @commands.bot_has_permissions(manage_roles=True)
 async def role_group(ctx):
@@ -1223,14 +1223,14 @@ async def role_delete(ctx, *, role: discord.Role):
     await role.delete()
     await ok(ctx, f"🗑️ nuked role **{name}**.")
 
-@bot.command(name="giverole", aliases=["gr"])
+@bot.hybrid_command(name="giverole", aliases=["gr"])
 @commands.has_permissions(manage_roles=True)
 @commands.bot_has_permissions(manage_roles=True)
 async def giverole(ctx, member: discord.Member, *, role: discord.Role):
     await member.add_roles(role)
     await ok(ctx, f"✅ gave **{role.name}** to **{member}**.")
 
-@bot.command(name="takerole", aliases=["tr"])
+@bot.hybrid_command(name="takerole", aliases=["tr"])
 @commands.has_permissions(manage_roles=True)
 @commands.bot_has_permissions(manage_roles=True)
 async def takerole(ctx, member: discord.Member, *, role: discord.Role):
@@ -1239,14 +1239,14 @@ async def takerole(ctx, member: discord.Member, *, role: discord.Role):
 
 # =============== MEMBER ===============
 
-@bot.command(name="nick", aliases=["nickname"])
+@bot.hybrid_command(name="nick", aliases=["nickname"])
 @commands.has_permissions(manage_nicknames=True)
 @commands.bot_has_permissions(manage_nicknames=True)
 async def nick(ctx, member: discord.Member, *, new_nick: str = None):
     await member.edit(nick=new_nick)
     await ok(ctx, f"✏️ **{member}** is now **{new_nick or '(cleared)'}**.")
 
-@bot.command(name="resetnick")
+@bot.hybrid_command(name="resetnick")
 @commands.has_permissions(manage_nicknames=True)
 async def resetnick(ctx, member: discord.Member):
     await member.edit(nick=None)
@@ -1254,7 +1254,7 @@ async def resetnick(ctx, member: discord.Member):
 
 # =============== SERVER ===============
 
-@bot.command(name="icon")
+@bot.hybrid_command(name="icon")
 async def icon(ctx):
     if not ctx.guild.icon:
         return await bad(ctx, "no icon set.")
@@ -1262,7 +1262,7 @@ async def icon(ctx):
     e.set_image(url=ctx.guild.icon.url)
     await ctx.send(embed=e)
 
-@bot.command(name="roleslist", aliases=["rolelist", "roles-list"])
+@bot.hybrid_command(name="roleslist", aliases=["rolelist", "roles-list"])
 async def roleslist(ctx):
     sorted_roles = sorted(ctx.guild.roles, key=lambda r: r.position, reverse=True)
     text = " ".join(r.mention for r in sorted_roles)
@@ -1271,7 +1271,7 @@ async def roleslist(ctx):
 
 # =============== UTILITY ===============
 
-@bot.command(name="uptime")
+@bot.hybrid_command(name="uptime")
 async def uptime(ctx):
     delta = dt.datetime.now(dt.timezone.utc) - bot.start_time
     await ok(ctx, f"⏰ up for **{int(delta.total_seconds())}s** without a nap.")
@@ -1304,66 +1304,66 @@ async def solo_action(ctx, verb: str, emoji: str, category: str):
     else:
         await ctx.send(text)
 
-@bot.command(name="poke")
+@bot.hybrid_command(name="poke")
 async def poke(ctx, member: discord.Member): await action_cmd(ctx, member, "pokes", "👉", "poke")
 
-@bot.command(name="bite")
+@bot.hybrid_command(name="bite")
 async def bite(ctx, member: discord.Member): await action_cmd(ctx, member, "bites", "🦷", "bite")
 
-@bot.command(name="cuddle")
+@bot.hybrid_command(name="cuddle")
 async def cuddle(ctx, member: discord.Member): await action_cmd(ctx, member, "cuddles with", "💞", "cuddle")
 
-@bot.command(name="bully")
+@bot.hybrid_command(name="bully")
 async def bully(ctx, member: discord.Member): await action_cmd(ctx, member, "is bullying", "😈", "bully")
 
-@bot.command(name="yeet")
+@bot.hybrid_command(name="yeet")
 async def yeet(ctx, member: discord.Member): await action_cmd(ctx, member, "yeets", "🚀", "yeet")
 
-@bot.command(name="nom")
+@bot.hybrid_command(name="nom")
 async def nom(ctx, member: discord.Member): await action_cmd(ctx, member, "noms on", "😋", "nom")
 
-@bot.command(name="highfive", aliases=["hf"])
+@bot.hybrid_command(name="highfive", aliases=["hf"])
 async def highfive(ctx, member: discord.Member): await action_cmd(ctx, member, "high-fives", "🙏", "highfive")
 
-@bot.command(name="handhold")
+@bot.hybrid_command(name="handhold")
 async def handhold(ctx, member: discord.Member): await action_cmd(ctx, member, "holds hands with", "🤝", "handhold")
 
-@bot.command(name="lick")
+@bot.hybrid_command(name="lick")
 async def lick(ctx, member: discord.Member): await action_cmd(ctx, member, "licks", "👅", "lick")
 
-@bot.command(name="kill")
+@bot.hybrid_command(name="kill")
 async def kill(ctx, member: discord.Member): await action_cmd(ctx, member, "ends", "🔪", "kill")
 
-@bot.command(name="dance")
+@bot.hybrid_command(name="dance")
 async def dance(ctx): await solo_action(ctx, "hits the dancefloor", "💃", "dance")
 
-@bot.command(name="cry")
+@bot.hybrid_command(name="cry")
 async def cry(ctx): await solo_action(ctx, "is sobbing", "😭", "cry")
 
-@bot.command(name="wave")
+@bot.hybrid_command(name="wave")
 async def wave(ctx): await solo_action(ctx, "waves hello", "👋", "wave")
 
-@bot.command(name="blush")
+@bot.hybrid_command(name="blush")
 async def blush(ctx): await solo_action(ctx, "is blushing", "😊", "blush")
 
-@bot.command(name="smile")
+@bot.hybrid_command(name="smile")
 async def smile(ctx): await solo_action(ctx, "smiles", "😊", "smile")
 
-@bot.command(name="smug")
+@bot.hybrid_command(name="smug")
 async def smug(ctx): await solo_action(ctx, "looks smug", "😏", "smug")
 
-@bot.command(name="wink")
+@bot.hybrid_command(name="wink")
 async def wink(ctx): await solo_action(ctx, "winks", "😉", "wink")
 
-@bot.command(name="cringe")
+@bot.hybrid_command(name="cringe")
 async def cringe(ctx): await solo_action(ctx, "cringes hard", "😬", "cringe")
 
-@bot.command(name="happy")
+@bot.hybrid_command(name="happy")
 async def happy(ctx): await solo_action(ctx, "is happy", "😄", "happy")
 
 # =============== PICTURES ===============
 
-@bot.command(name="cat")
+@bot.hybrid_command(name="cat")
 async def cat(ctx):
     try:
         j = await fetch_json("https://api.thecatapi.com/v1/images/search")
@@ -1373,7 +1373,7 @@ async def cat(ctx):
         await ctx.send(embed=e)
     except: await bad(ctx, "cats are hiding.")
 
-@bot.command(name="kitty", aliases=["kitten"])
+@bot.hybrid_command(name="kitty", aliases=["kitten"])
 async def kitty_cmd(ctx):
     """Random cute kitten pic."""
     import time as _t
@@ -1392,7 +1392,7 @@ async def slash_kitty(interaction: discord.Interaction):
     e.set_footer(text="🐱 awww")
     await interaction.response.send_message(embed=e)
 
-@bot.command(name="dog")
+@bot.hybrid_command(name="dog")
 async def dog(ctx):
     try:
         j = await fetch_json("https://dog.ceo/api/breeds/image/random")
@@ -1402,7 +1402,7 @@ async def dog(ctx):
         await ctx.send(embed=e)
     except: await bad(ctx, "dogs ran off.")
 
-@bot.command(name="fox")
+@bot.hybrid_command(name="fox")
 async def fox(ctx):
     try:
         j = await fetch_json("https://randomfox.ca/floof/")
@@ -1412,7 +1412,7 @@ async def fox(ctx):
         await ctx.send(embed=e)
     except: await bad(ctx, "no foxes today.")
 
-@bot.command(name="duck")
+@bot.hybrid_command(name="duck")
 async def duck(ctx):
     try:
         j = await fetch_json("https://random-d.uk/api/v2/random")
@@ -1424,28 +1424,28 @@ async def duck(ctx):
 
 # =============== TEXT TOYS ===============
 
-@bot.command(name="mock")
+@bot.hybrid_command(name="mock")
 async def mock(ctx, *, text: str):
     result = "".join(c.lower() if i % 2 else c.upper() for i, c in enumerate(text))
     await ok(ctx, result)
 
-@bot.command(name="reverse", aliases=["rev"])
+@bot.hybrid_command(name="reverse", aliases=["rev"])
 async def reverse(ctx, *, text: str):
     await ok(ctx, text[::-1])
 
-@bot.command(name="caps", aliases=["upper"])
+@bot.hybrid_command(name="caps", aliases=["upper"])
 async def caps(ctx, *, text: str):
     await ok(ctx, text.upper())
 
-@bot.command(name="lower")
+@bot.hybrid_command(name="lower")
 async def lower(ctx, *, text: str):
     await ok(ctx, text.lower())
 
-@bot.command(name="clap")
+@bot.hybrid_command(name="clap")
 async def clap(ctx, *, text: str):
     await ok(ctx, " 👏 ".join(text.split()))
 
-@bot.command(name="owo", aliases=["uwu"])
+@bot.hybrid_command(name="owo", aliases=["uwu"])
 async def owo(ctx, *, text: str):
     owoified = text.replace("r", "w").replace("l", "w").replace("R", "W").replace("L", "W")
     owoified = re.sub(r"n([aeiou])", r"ny\1", owoified)
@@ -1453,7 +1453,7 @@ async def owo(ctx, *, text: str):
     faces = [" owo", " uwu", " ^w^", " >w<", " :3"]
     await ok(ctx, owoified + random.choice(faces))
 
-@bot.command(name="base64", aliases=["b64"])
+@bot.hybrid_command(name="base64", aliases=["b64"])
 async def base64_cmd(ctx, mode: str, *, text: str):
     try:
         if mode.lower() in ("encode", "e"):
@@ -1474,7 +1474,7 @@ MORSE_MAP = {
 }
 MORSE_INV = {v: k for k, v in MORSE_MAP.items()}
 
-@bot.command(name="morse")
+@bot.hybrid_command(name="morse")
 async def morse(ctx, mode: str, *, text: str):
     if mode.lower() in ("encode", "e"):
         result = " ".join("/" if c == " " else MORSE_MAP.get(c.upper(), "") for c in text).strip()
@@ -1485,7 +1485,7 @@ async def morse(ctx, mode: str, *, text: str):
     else:
         await bad(ctx, "mode: `encode` or `decode`.")
 
-@bot.command(name="binary", aliases=["bin"])
+@bot.hybrid_command(name="binary", aliases=["bin"])
 async def binary(ctx, mode: str, *, text: str):
     try:
         if mode.lower() in ("encode", "e"):
@@ -1495,12 +1495,12 @@ async def binary(ctx, mode: str, *, text: str):
         else: await bad(ctx, "mode: `encode` or `decode`.")
     except: await bad(ctx, "invalid binary.")
 
-@bot.command(name="rot13")
+@bot.hybrid_command(name="rot13")
 async def rot13(ctx, *, text: str):
     import codecs
     await ok(ctx, codecs.encode(text, "rot_13"))
 
-@bot.command(name="hexencode")
+@bot.hybrid_command(name="hexencode")
 async def hex_cmd(ctx, mode: str, *, text: str):
     try:
         if mode.lower() in ("encode", "e"):
@@ -1510,18 +1510,18 @@ async def hex_cmd(ctx, mode: str, *, text: str):
         else: await bad(ctx, "mode: `encode` or `decode`.")
     except: await bad(ctx, "bad input.")
 
-@bot.command(name="length", aliases=["len"])
+@bot.hybrid_command(name="length", aliases=["len"])
 async def length(ctx, *, text: str):
     await ok(ctx, f"📏 **{len(text)}** chars • **{len(text.split())}** words")
 
-@bot.command(name="spoiler")
+@bot.hybrid_command(name="spoiler")
 async def spoiler(ctx, *, text: str):
     await ctx.message.delete()
     await ctx.send(f"||{text}||")
 
 # =============== MATH / RNG ===============
 
-@bot.command(name="math", aliases=["calc"])
+@bot.hybrid_command(name="math", aliases=["calc"])
 async def math_cmd(ctx, *, expr: str):
     if not re.fullmatch(r"[\d\s+\-*/().%*]+", expr):
         return await bad(ctx, "only numbers and `+ - * / % ** ( )` allowed.")
@@ -1530,12 +1530,12 @@ async def math_cmd(ctx, *, expr: str):
         await ok(ctx, f"🧮 `{expr}` = **{result}**")
     except: await bad(ctx, "invalid expression.")
 
-@bot.command(name="random", aliases=["rand"])
+@bot.hybrid_command(name="random", aliases=["rand"])
 async def random_num(ctx, lo: int, hi: int):
     if lo > hi: lo, hi = hi, lo
     await ok(ctx, f"🎲 {random.randint(lo, hi)}")
 
-@bot.command(name="pwgen", aliases=["password"])
+@bot.hybrid_command(name="pwgen", aliases=["password"])
 async def pwgen(ctx, length: int = 20):
     length = max(4, min(128, length))
     charset = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*"
@@ -1548,14 +1548,14 @@ async def pwgen(ctx, length: int = 20):
 
 # =============== DISCORD UTILS ===============
 
-@bot.command(name="snowflake", aliases=["sf"])
+@bot.hybrid_command(name="snowflake", aliases=["sf"])
 async def snowflake(ctx, sf: str):
     if not re.fullmatch(r"\d{15,22}", sf):
         return await bad(ctx, "give a valid ID.")
     ts = (int(sf) >> 22) + 1420070400000
     await ok(ctx, f"🆔 `{sf}` → <t:{ts // 1000}:F> (<t:{ts // 1000}:R>)")
 
-@bot.command(name="timestamp", aliases=["ts"])
+@bot.hybrid_command(name="timestamp", aliases=["ts"])
 async def timestamp_cmd(ctx, *, when: str = "now"):
     try:
         if when.lower() == "now":
@@ -1566,7 +1566,7 @@ async def timestamp_cmd(ctx, *, when: str = "now"):
         await ok(ctx, f"`<t:{t}>` → <t:{t}>\n`<t:{t}:F>` → <t:{t}:F>\n`<t:{t}:R>` → <t:{t}:R>")
     except: await bad(ctx, "invalid date — try `2025-12-25` or `now`.")
 
-@bot.command(name="enlarge", aliases=["bigemoji", "jumbo"])
+@bot.hybrid_command(name="enlarge", aliases=["bigemoji", "jumbo"])
 async def enlarge(ctx, emoji: str):
     m = re.match(r"<(a?):\w+:(\d+)>", emoji)
     if not m: return await bad(ctx, "give me a custom emoji.")
@@ -1576,7 +1576,7 @@ async def enlarge(ctx, emoji: str):
     e.set_image(url=url)
     await ctx.send(embed=e)
 
-@bot.command(name="steal")
+@bot.hybrid_command(name="steal")
 @commands.has_permissions(manage_emojis=True)
 @commands.bot_has_permissions(manage_emojis=True)
 async def steal(ctx, emoji: str, name: str = None):
@@ -1593,7 +1593,7 @@ async def steal(ctx, emoji: str, name: str = None):
 
 # =============== MISC ===============
 
-@bot.command(name="color", aliases=["colour", "hex"])
+@bot.hybrid_command(name="color", aliases=["colour", "hex"])
 async def color(ctx, hex_code: str):
     hex_code = hex_code.replace("#", "").lower()
     if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
@@ -1606,13 +1606,13 @@ async def color(ctx, hex_code: str):
     e.add_field(name="B", value=i & 255, inline=True)
     await ctx.send(embed=e)
 
-@bot.command(name="firstmsg", aliases=["first"])
+@bot.hybrid_command(name="firstmsg", aliases=["first"])
 async def firstmsg(ctx):
     async for m in ctx.channel.history(limit=1, oldest_first=True):
         return await ok(ctx, f"first message: {m.jump_url}")
     await bad(ctx, "no messages found.")
 
-@bot.command(name="qr")
+@bot.hybrid_command(name="qr")
 async def qr(ctx, *, text: str):
     import urllib.parse as up
     url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={up.quote(text)}"
@@ -1621,11 +1621,11 @@ async def qr(ctx, *, text: str):
     e.set_footer(text=text[:100])
     await ctx.send(embed=e)
 
-@bot.command(name="rate")
+@bot.hybrid_command(name="rate")
 async def rate(ctx, *, thing: str = "that"):
     await ok(ctx, f"i'd rate **{thing}** a **{random.randint(0, 10)}/10**.")
 
-@bot.command(name="shorten")
+@bot.hybrid_command(name="shorten")
 async def shorten(ctx, url: str):
     if not re.match(r"^https?://", url):
         return await bad(ctx, "give a full URL.")
@@ -1641,7 +1641,7 @@ async def shorten(ctx, url: str):
 
 # =============== LOOKUPS ===============
 
-@bot.command(name="joke")
+@bot.hybrid_command(name="joke")
 async def joke(ctx):
     try:
         j = await fetch_json("https://v2.jokeapi.dev/joke/Any?safe-mode")
@@ -1649,35 +1649,35 @@ async def joke(ctx):
         await ok(ctx, f"🎭 {text}")
     except: await bad(ctx, "joke api ghosted me.")
 
-@bot.command(name="dadjoke", aliases=["dad"])
+@bot.hybrid_command(name="dadjoke", aliases=["dad"])
 async def dadjoke(ctx):
     try:
         j = await fetch_json("https://icanhazdadjoke.com/", headers={"Accept": "application/json", "User-Agent": "kitty-bot"})
         await ok(ctx, f"👨 {j['joke']}")
     except: await bad(ctx, "dad is out buying milk.")
 
-@bot.command(name="fact")
+@bot.hybrid_command(name="fact")
 async def fact(ctx):
     try:
         j = await fetch_json("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en")
         await ok(ctx, f"🧠 {j['text']}")
     except: await bad(ctx, "facts machine broke.")
 
-@bot.command(name="advice")
+@bot.hybrid_command(name="advice")
 async def advice(ctx):
     try:
         j = await fetch_json("https://api.adviceslip.com/advice")
         await ok(ctx, f"💡 {j['slip']['advice']}")
     except: await bad(ctx, "no advice left.")
 
-@bot.command(name="quote")
+@bot.hybrid_command(name="quote")
 async def quote(ctx):
     try:
         j = await fetch_json("https://zenquotes.io/api/random")
         await ok(ctx, f"💬 *\"{j[0]['q']}\"* — **{j[0]['a']}**")
     except: await bad(ctx, "muses on strike.")
 
-@bot.command(name="meme")
+@bot.hybrid_command(name="meme")
 async def meme(ctx):
     try:
         j = await fetch_json("https://meme-api.com/gimme")
@@ -1688,7 +1688,7 @@ async def meme(ctx):
         await ctx.send(embed=e)
     except: await bad(ctx, "meme supply disrupted.")
 
-@bot.command(name="define", aliases=["def"])
+@bot.hybrid_command(name="define", aliases=["def"])
 async def define(ctx, *, word: str):
     try:
         j = await fetch_json(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}")
@@ -1701,7 +1701,7 @@ async def define(ctx, *, word: str):
         await ctx.send(embed=e)
     except: await bad(ctx, f"no entry for **{word}**.")
 
-@bot.command(name="wiki")
+@bot.hybrid_command(name="wiki")
 async def wiki(ctx, *, topic: str):
     try:
         j = await fetch_json(f"https://en.wikipedia.org/api/rest_v1/page/summary/{topic.replace(' ', '_')}")
@@ -1714,7 +1714,7 @@ async def wiki(ctx, *, topic: str):
         await ctx.send(embed=e)
     except: await bad(ctx, "wikipedia had no answer.")
 
-@bot.command(name="github", aliases=["gh"])
+@bot.hybrid_command(name="github", aliases=["gh"])
 async def github(ctx, username: str):
     try:
         j = await fetch_json(f"https://api.github.com/users/{username}")
@@ -1728,7 +1728,7 @@ async def github(ctx, username: str):
         await ctx.send(embed=e)
     except: await bad(ctx, "user not found.")
 
-@bot.command(name="npm")
+@bot.hybrid_command(name="npm")
 async def npm(ctx, pkg: str):
     try:
         j = await fetch_json(f"https://registry.npmjs.org/{pkg}")
@@ -1742,7 +1742,7 @@ async def npm(ctx, pkg: str):
         await ctx.send(embed=e)
     except: await bad(ctx, "package not found.")
 
-@bot.command(name="coin", aliases=["crypto"])
+@bot.hybrid_command(name="coin", aliases=["crypto"])
 async def coin(ctx, coin_id: str):
     try:
         j = await fetch_json(f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id.lower()}&vs_currencies=usd&include_24hr_change=true")
@@ -1752,7 +1752,7 @@ async def coin(ctx, coin_id: str):
         await ok(ctx, f"{arrow} **{coin_id}** — **${d['usd']:,}** ({d['usd_24h_change']:.2f}% 24h)")
     except: await bad(ctx, "coingecko napping.")
 
-@bot.command(name="weather")
+@bot.hybrid_command(name="weather")
 async def weather(ctx, *, city: str):
     try:
         geo = await fetch_json(f"https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1")
@@ -1769,7 +1769,7 @@ async def weather(ctx, *, city: str):
 
 # =============== RECON / OSINT ===============
 
-@bot.command(name="iplookup", aliases=["ip"])
+@bot.hybrid_command(name="iplookup", aliases=["ip"])
 async def iplookup(ctx, ip: str):
     try:
         j = await fetch_json(f"http://ip-api.com/json/{ip}?fields=status,message,country,regionName,city,zip,lat,lon,timezone,isp,org,as,query,proxy,hosting")
@@ -1789,7 +1789,7 @@ async def iplookup(ctx, ip: str):
         await ctx.send(embed=e)
     except Exception as ex: await bad(ctx, f"lookup failed: `{ex}`")
 
-@bot.command(name="dns")
+@bot.hybrid_command(name="dns")
 async def dns_cmd(ctx, domain: str, record_type: str = "A"):
     try:
         j = await fetch_json(f"https://dns.google/resolve?name={domain}&type={record_type.upper()}")
@@ -1801,7 +1801,7 @@ async def dns_cmd(ctx, domain: str, record_type: str = "A"):
         await ctx.send(embed=e)
     except Exception as ex: await bad(ctx, f"dns query failed: `{ex}`")
 
-@bot.command(name="subbrute", aliases=["subs", "subdomains"])
+@bot.hybrid_command(name="subbrute", aliases=["subs", "subdomains"])
 async def subbrute(ctx, domain: str):
     working = await ctx.send(f"🔍 digging through crt.sh for **{domain}**...")
     try:
@@ -1824,7 +1824,7 @@ async def subbrute(ctx, domain: str):
             await working.edit(content=header, attachments=[file])
     except Exception as ex: await working.edit(content=f"💀 subbrute failed: `{ex}`")
 
-@bot.command(name="domain", aliases=["rdap"])
+@bot.hybrid_command(name="domain", aliases=["rdap"])
 async def whois_cmd(ctx, domain: str):
     try:
         j = await fetch_json(f"https://rdap.org/domain/{domain}")
@@ -1838,7 +1838,7 @@ async def whois_cmd(ctx, domain: str):
         await ctx.send(embed=e)
     except Exception as ex: await bad(ctx, f"whois failed: `{ex}`")
 
-@bot.command(name="reverseip", aliases=["rip"])
+@bot.hybrid_command(name="reverseip", aliases=["rip"])
 async def reverseip(ctx, ip: str):
     try:
         parts = ip.split(".")
@@ -1849,7 +1849,7 @@ async def reverseip(ctx, ip: str):
         await ok(ctx, f"🔄 {ip} → `{ptr}`")
     except Exception as ex: await bad(ctx, f"failed: `{ex}`")
 
-@bot.command(name="headers")
+@bot.hybrid_command(name="headers")
 async def headers(ctx, url: str):
     if not re.match(r"^https?://", url): url = "https://" + url
     try:
@@ -1861,7 +1861,7 @@ async def headers(ctx, url: str):
                 await ctx.send(embed=e)
     except Exception as ex: await bad(ctx, f"fetch failed: `{ex}`")
 
-@bot.command(name="status", aliases=["http"])
+@bot.hybrid_command(name="status", aliases=["http"])
 async def http_status(ctx, url: str):
     if not re.match(r"^https?://", url): url = "https://" + url
     start = dt.datetime.now()
