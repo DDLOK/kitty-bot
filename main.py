@@ -242,6 +242,20 @@ class MusicControls(discord.ui.View):
 CF_WORKER_URL = os.environ.get("CLOUDFLARE_WORKER_URL", "").rstrip("/")
 CF_WORKER_SECRET = os.environ.get("CLOUDFLARE_WORKER_SECRET", "")
 
+async def cf_sync(user_id: int, **fields):
+    """Push user data (playlists/queue) to Cloudflare Worker for dashboard."""
+    if not CF_WORKER_URL or not CF_WORKER_SECRET:
+        return
+    try:
+        async with aiohttp.ClientSession() as s:
+            await s.post(
+                f"{CF_WORKER_URL}/sync",
+                json={"user_id": str(user_id), **fields},
+                headers={"Authorization": f"Bearer {CF_WORKER_SECRET}"},
+            )
+    except Exception as e:
+        print(f"cf_sync error: {e}")
+
 async def cloudflare_page(track) -> Optional[str]:
     """POST song to the user's Cloudflare Worker, return shareable URL."""
     if not CF_WORKER_URL or not CF_WORKER_SECRET:
@@ -878,6 +892,7 @@ async def pl_create(interaction: discord.Interaction, name: str):
         return await interaction.response.send_message(f"playlist **{name}** already exists.", ephemeral=True)
     user_pls[name] = []
     save_playlists(bot.playlists)
+    await cf_sync(interaction.user.id, playlists=user_pls)
     await interaction.response.send_message(f"✅ created playlist **{name}**.", ephemeral=True)
 
 @playlist_group.command(name="add", description="Add a track (URL or search) to a playlist")
@@ -899,11 +914,13 @@ async def pl_add(interaction: discord.Interaction, name: str, query: str):
                 user_pls[name].append(t.uri or t.identifier)
                 added += 1
             save_playlists(bot.playlists)
+            await cf_sync(interaction.user.id, playlists=user_pls)
             await interaction.followup.send(f"✅ added **{added}** tracks from **{tracks.name}** to **{name}**.", ephemeral=True)
         else:
             track = tracks[0]
             user_pls[name].append(track.uri or track.identifier)
             save_playlists(bot.playlists)
+            await cf_sync(interaction.user.id, playlists=user_pls)
             await interaction.followup.send(f"✅ added **{track.title}** to **{name}**.", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"💀 add failed: `{e}`", ephemeral=True)
@@ -981,6 +998,7 @@ async def pl_remove(interaction: discord.Interaction, name: str, position: int):
         return await interaction.response.send_message("invalid position.", ephemeral=True)
     removed = user_pls[name].pop(position - 1)
     save_playlists(bot.playlists)
+    await cf_sync(interaction.user.id, playlists=user_pls)
     await interaction.response.send_message(f"🗑️ removed track #{position} from **{name}**.", ephemeral=True)
 
 @playlist_group.command(name="delete", description="Delete a playlist")
@@ -992,6 +1010,7 @@ async def pl_delete(interaction: discord.Interaction, name: str):
         return await interaction.response.send_message(f"no playlist **{name}**.", ephemeral=True)
     del user_pls[name]
     save_playlists(bot.playlists)
+    await cf_sync(interaction.user.id, playlists=user_pls)
     await interaction.response.send_message(f"🗑️ deleted playlist **{name}**.", ephemeral=True)
 
 bot.tree.add_command(playlist_group)

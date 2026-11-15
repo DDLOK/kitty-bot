@@ -80,6 +80,34 @@ export default {
       }
     }
 
+    // ---- Sync endpoint (bot → worker) ----
+    if (request.method === 'POST' && url.pathname === '/sync') {
+      const auth = request.headers.get('Authorization');
+      if (auth !== `Bearer ${env.SECRET}`) return new Response('unauthorized', { status: 401 });
+      let data;
+      try { data = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      // { user_id, playlists }  OR  { user_id, queue, current }
+      if (!data.user_id) return json({ error: 'user_id required' }, 400);
+      if (data.playlists !== undefined) {
+        await env.SONGS.put(`user:${data.user_id}:playlists`, JSON.stringify(data.playlists), { expirationTtl: 60 * 60 * 24 * 30 });
+      }
+      if (data.queue !== undefined) {
+        await env.SONGS.put(`user:${data.user_id}:queue`, JSON.stringify({ queue: data.queue, current: data.current || null }), { expirationTtl: 60 * 60 * 24 * 7 });
+      }
+      return json({ ok: true });
+    }
+
+    // ---- Dashboard (requires login) ----
+    if (url.pathname === '/dashboard' || url.pathname === '/d') {
+      const session = await getSession(request, env);
+      if (!session) return Response.redirect(`${url.origin}/auth/login?next=/dashboard`, 302);
+      const plRaw = await env.SONGS.get(`user:${session.id}:playlists`);
+      const qRaw = await env.SONGS.get(`user:${session.id}:queue`);
+      const playlists = plRaw ? JSON.parse(plRaw) : {};
+      const qData = qRaw ? JSON.parse(qRaw) : { queue: [], current: null };
+      return htmlPage(renderDashboard(session, playlists, qData, url.origin));
+    }
+
     if (url.pathname === '/') return htmlPage(landingPage(url.origin));
     return new Response('404', { status: 404 });
   },
@@ -254,10 +282,8 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   body {
     font-family: 'Segoe UI', 'Frutiger', Tahoma, sans-serif;
     background:
-      radial-gradient(ellipse at 20% 20%, rgba(180, 230, 255, 0.6), transparent 50%),
-      radial-gradient(ellipse at 80% 70%, rgba(170, 240, 190, 0.8), transparent 50%),
-      radial-gradient(ellipse at 50% 100%, rgba(200, 255, 220, 0.6), transparent 60%),
-      linear-gradient(180deg, #a5e3ff 0%, #c8f5d8 50%, #e8fff0 100%);
+      url('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png') center/cover no-repeat,
+      linear-gradient(180deg, #4a95e8 0%, #7bc96f 60%, #4e9c38 100%);
     background-attachment: fixed;
     min-height: 100vh;
     color: var(--text-dark);
@@ -573,33 +599,68 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   }
   .brand::before { content: '♪ '; color: var(--aqua-pink); }
 
-  /* Click-for-sound overlay */
-  .sound-overlay {
-    position: absolute;
-    inset: 0;
+  /* Speed row */
+  .speed-row {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(10, 42, 24, 0.35);
-    backdrop-filter: blur(4px);
+    gap: 6px;
+    padding: 2px 8px 10px;
+    flex-wrap: wrap;
+  }
+  .speed-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-dark);
+    opacity: 0.6;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-right: 4px;
+  }
+  .speed-btn {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    background: linear-gradient(180deg, rgba(255,255,255,0.7), rgba(220,255,230,0.5));
+    border: 1px solid rgba(50,180,100,0.4);
+    color: var(--text-dark);
     cursor: pointer;
-    border-radius: 50%;
-    width: 220px; height: 220px;
-    margin: auto;
-    z-index: 3;
-    transition: opacity 0.3s;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
   }
-  .sound-overlay.hidden { opacity: 0; pointer-events: none; }
-  .sound-prompt {
-    text-align: center;
+  .speed-btn.active {
+    background: linear-gradient(180deg, #d9ffe6, #4dd680 70%, #1a8e4a);
     color: #fff;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
   }
-  .sound-icon { font-size: 44px; margin-bottom: 4px; animation: pulse 1.5s ease-in-out infinite; }
-  .sound-text { font-size: 13px; font-weight: 600; }
-  @keyframes pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.1); }
+
+  /* Visualizer bars under disc */
+  .viz {
+    display: flex;
+    gap: 3px;
+    justify-content: center;
+    align-items: flex-end;
+    height: 24px;
+    margin: 0 auto 8px;
+    opacity: 0.5;
+  }
+  .viz-bar {
+    width: 3px;
+    background: linear-gradient(180deg, #4dd680, #1a8e4a);
+    border-radius: 2px;
+    animation: viz-pulse 0.8s ease-in-out infinite;
+  }
+  .viz-bar:nth-child(1) { animation-delay: 0s; height: 60%; }
+  .viz-bar:nth-child(2) { animation-delay: 0.1s; height: 80%; }
+  .viz-bar:nth-child(3) { animation-delay: 0.2s; height: 100%; }
+  .viz-bar:nth-child(4) { animation-delay: 0.3s; height: 70%; }
+  .viz-bar:nth-child(5) { animation-delay: 0.15s; height: 90%; }
+  .viz-bar:nth-child(6) { animation-delay: 0.25s; height: 50%; }
+  .viz-bar:nth-child(7) { animation-delay: 0.35s; height: 85%; }
+  .viz.paused .viz-bar { animation-play-state: paused; }
+  @keyframes viz-pulse {
+    0%, 100% { transform: scaleY(0.4); }
+    50% { transform: scaleY(1); }
   }
 
   /* User bar */
@@ -657,17 +718,21 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     <div class="disc-wrap">
       <div class="disc" id="disc"></div>
       <div id="yt-player"></div>
-      <div id="sound-overlay" class="sound-overlay">
-        <div class="sound-prompt">
-          <div class="sound-icon">🔊</div>
-          <div class="sound-text">Click for sound</div>
-        </div>
-      </div>
     </div>
 
     <div class="meta">
       <h1>${title}</h1>
       <div class="author">${author}${duration ? ' • ' + duration : ''}</div>
+    </div>
+
+    <div class="viz paused" id="viz">
+      <div class="viz-bar"></div>
+      <div class="viz-bar"></div>
+      <div class="viz-bar"></div>
+      <div class="viz-bar"></div>
+      <div class="viz-bar"></div>
+      <div class="viz-bar"></div>
+      <div class="viz-bar"></div>
     </div>
 
     <div class="progress-wrap">
@@ -680,10 +745,20 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       <button class="ctrl" id="back10" title="Back 10s">⏪</button>
       <button class="ctrl primary" id="playpause" title="Play/Pause">⏸</button>
       <button class="ctrl" id="fwd10" title="Forward 10s">⏩</button>
+      <button class="ctrl" id="mute" title="Mute / Unmute">🔇</button>
       <div class="vol-wrap">
-        <span>🔊</span>
+        <span id="vol-icon">🔊</span>
         <input type="range" min="0" max="100" value="80" class="vol-slider" id="vol">
       </div>
+    </div>
+
+    <div class="speed-row">
+      <span class="speed-label">Speed</span>
+      <button class="speed-btn" data-rate="0.5">0.5×</button>
+      <button class="speed-btn active" data-rate="1">1×</button>
+      <button class="speed-btn" data-rate="1.25">1.25×</button>
+      <button class="speed-btn" data-rate="1.5">1.5×</button>
+      <button class="speed-btn" data-rate="2">2×</button>
     </div>
 
     <div class="actions">
@@ -746,29 +821,45 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       setInterval(updateProgress, 500);
     }
 
-    // Click overlay → unmute + hide overlay
-    document.getElementById('sound-overlay').addEventListener('click', () => {
-      if (player && player.unMute) {
+    // Mute toggle
+    document.getElementById('mute').onclick = () => {
+      if (!player) return;
+      const btn = document.getElementById('mute');
+      if (player.isMuted()) {
         player.unMute();
-        player.setVolume(80);
-        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-          player.playVideo();
-        }
+        btn.textContent = '🔊';
+      } else {
+        player.mute();
+        btn.textContent = '🔇';
       }
-      document.getElementById('sound-overlay').classList.add('hidden');
+    };
+
+    // Playback speed
+    document.querySelectorAll('.speed-btn').forEach(b => {
+      b.onclick = () => {
+        if (!player) return;
+        const rate = parseFloat(b.dataset.rate);
+        player.setPlaybackRate(rate);
+        document.querySelectorAll('.speed-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+      };
     });
 
     function onStateChange(e) {
       const btn = document.getElementById('playpause');
+      const viz = document.getElementById('viz');
       if (e.data === YT.PlayerState.PLAYING) {
         btn.textContent = '⏸';
         disc.classList.add('playing');
+        viz.classList.remove('paused');
       } else if (e.data === YT.PlayerState.PAUSED) {
         btn.textContent = '▶';
         disc.classList.remove('playing');
+        viz.classList.add('paused');
       } else if (e.data === YT.PlayerState.ENDED) {
         btn.textContent = '↻';
         disc.classList.remove('playing');
+        viz.classList.add('paused');
       }
     }
 
@@ -823,24 +914,245 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
 </html>`;
 }
 
+function renderDashboard(session, playlists, qData, origin) {
+  const name = esc(session.global_name);
+  const avatar = esc(session.avatar);
+  const plEntries = Object.entries(playlists);
+  const plHtml = plEntries.length
+    ? plEntries.map(([n, tracks]) => `
+      <div class="pl-card">
+        <div class="pl-head">
+          <h3>${esc(n)}</h3>
+          <span class="pl-count">${tracks.length} tracks</span>
+        </div>
+        <div class="pl-tracks">
+          ${tracks.slice(0, 5).map((t, i) => `<div class="pl-track">${i+1}. <a href="${esc(t)}" target="_blank">${esc(t)}</a></div>`).join('')}
+          ${tracks.length > 5 ? `<div class="pl-more">+${tracks.length - 5} more</div>` : ''}
+        </div>
+      </div>
+    `).join('')
+    : `<div class="empty">No playlists yet. In Discord: <code>/playlist create name:yours</code></div>`;
+
+  const queueHtml = qData.current
+    ? `<div class="current">
+         <div class="current-label">▶ NOW PLAYING</div>
+         <div class="current-title">${esc(qData.current.title || 'Unknown')}</div>
+         <div class="current-author">${esc(qData.current.author || '')}</div>
+       </div>`
+    : '';
+  const upcomingHtml = (qData.queue || []).length
+    ? `<div class="queue-list">
+         ${qData.queue.slice(0, 20).map((t, i) => `
+           <div class="queue-item"><span class="q-num">${i+1}.</span> ${esc(t.title || 'Unknown')} <span class="q-author">— ${esc(t.author || '')}</span></div>
+         `).join('')}
+         ${qData.queue.length > 20 ? `<div class="pl-more">+${qData.queue.length - 20} more</div>` : ''}
+       </div>`
+    : `<div class="empty">Queue empty.</div>`;
+
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>kitty discplayer — dashboard</title>
+<meta name="theme-color" content="#4dd680">
+<style>
+  :root { color-scheme: light; --green: #4dd680; --green-dark: #1a8e4a; --text: #0a2a18; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background:
+      url('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png') center/cover no-repeat,
+      linear-gradient(180deg, #4a95e8 0%, #7bc96f 60%);
+    background-attachment: fixed;
+    color: var(--text);
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(240,255,245,0.6));
+    border: 1px solid rgba(255,255,255,0.9);
+    border-radius: 18px;
+    padding: 14px 20px;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,1), 0 10px 30px rgba(0,0,0,0.2);
+    margin-bottom: 20px;
+    backdrop-filter: blur(20px);
+  }
+  .brand {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green-dark);
+    text-shadow: 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .brand::before { content: '♪ '; color: var(--green); }
+  .user {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 12px 4px 4px;
+    background: linear-gradient(180deg, #fff, #e8ffee);
+    border: 1px solid rgba(50,180,100,0.5);
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .user img { width: 32px; height: 32px; border-radius: 50%; }
+  .user a { color: var(--green-dark); text-decoration: none; font-size: 12px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(240,255,245,0.6));
+    border: 1px solid rgba(255,255,255,0.9);
+    border-radius: 18px;
+    padding: 18px;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,1), 0 10px 30px rgba(0,0,0,0.2);
+    backdrop-filter: blur(20px);
+  }
+  .panel h2 {
+    font-size: 18px;
+    color: var(--green-dark);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(50,180,100,0.3);
+    text-shadow: 0 1px 0 rgba(255,255,255,0.9);
+  }
+
+  .pl-card {
+    background: rgba(255,255,255,0.5);
+    border: 1px solid rgba(50,180,100,0.3);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .pl-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .pl-head h3 { font-size: 15px; color: var(--green-dark); }
+  .pl-count { font-size: 11px; opacity: 0.6; }
+  .pl-track, .queue-item, .pl-more {
+    font-size: 12px;
+    padding: 3px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pl-track a { color: #1a8e4a; text-decoration: none; }
+  .pl-track a:hover { text-decoration: underline; }
+  .pl-more, .empty { opacity: 0.5; font-style: italic; font-size: 12px; }
+  .empty { padding: 20px; text-align: center; }
+  .empty code { background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+
+  .current {
+    background: linear-gradient(180deg, #d9ffe6, #a8f5c0);
+    border: 1px solid rgba(50,180,100,0.5);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .current-label { font-size: 10px; font-weight: 700; color: var(--green-dark); letter-spacing: 1px; margin-bottom: 4px; }
+  .current-title { font-size: 15px; font-weight: 600; }
+  .current-author { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+
+  .queue-item { padding: 5px 0; border-bottom: 1px solid rgba(0,0,0,0.06); }
+  .q-num { color: var(--green-dark); font-weight: 600; margin-right: 6px; }
+  .q-author { opacity: 0.5; }
+</style>
+</head><body>
+<div class="wrap">
+  <header>
+    <div class="brand">kitty discplayer</div>
+    <div class="user">
+      <img src="${avatar}" alt="">
+      <span>${name}</span>
+      <a href="/auth/logout">logout</a>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>🎵 Your Playlists</h2>
+      ${plHtml}
+    </div>
+    <div class="panel">
+      <h2>📋 Now Playing & Queue</h2>
+      ${queueHtml}
+      ${upcomingHtml}
+    </div>
+  </div>
+
+  <div style="text-align:center; margin-top: 20px; font-size: 11px; opacity: 0.6; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5);">
+    Playlists update when you run <code>/playlist</code> commands in Discord. Queue updates on every <code>/play</code>.
+  </div>
+</div>
+</body></html>`;
+}
+
 function landingPage(origin) {
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>kitty songs</title>
+<html><head><meta charset="utf-8"><title>kitty discplayer</title>
 <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(180deg, #a5e3ff 0%, #ffd9f0 100%);
-    color: #2a1830;
-    display:grid; place-items:center; height:100vh; margin:0;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background:
+      url('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png') center/cover no-repeat,
+      linear-gradient(180deg, #4a95e8 0%, #7bc96f 60%);
+    background-attachment: fixed;
+    color: #0a2a18;
+    display: grid; place-items: center;
+    min-height: 100vh;
+    padding: 20px;
   }
-  h1 { color: #cc3399; font-size: 56px; text-shadow: 0 2px 0 rgba(255,255,255,0.8); }
-  p { font-size: 14px; }
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(240,255,245,0.6));
+    border: 1px solid rgba(255,255,255,0.9);
+    border-radius: 24px;
+    padding: 40px 50px;
+    text-align: center;
+    box-shadow: inset 0 2px 0 rgba(255,255,255,1), 0 20px 60px rgba(0,0,0,0.3);
+    backdrop-filter: blur(20px);
+    max-width: 500px;
+  }
+  h1 {
+    color: #1a8e4a;
+    font-size: 48px;
+    text-shadow: 0 2px 0 rgba(255,255,255,0.9);
+    margin-bottom: 8px;
+  }
+  .tagline {
+    font-size: 14px;
+    opacity: 0.8;
+    margin-bottom: 24px;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: linear-gradient(180deg, #d9ffe6, #4dd680 70%, #1a8e4a);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 999px;
+    font-weight: 600;
+    border: 1px solid rgba(0,60,30,0.5);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.7), 0 4px 12px rgba(50,180,100,0.5);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  }
+  .foot { font-size: 11px; opacity: 0.6; margin-top: 20px; }
 </style></head>
-<body><div style="text-align:center">
-<h1>♪ kitty discplayer</h1>
-<p>Link-only music sharing. Each song gets a one-time URL.</p>
-<p style="font-size:11px; margin-top:20px; opacity:0.6">Served from <code>${origin}</code></p>
-</div></body></html>`;
+<body>
+  <div class="card">
+    <h1>♪ kitty discplayer</h1>
+    <div class="tagline">one-time music share links · from a frutiger past</div>
+    <a href="/dashboard" class="cta">🎵 Open Dashboard</a>
+    <div class="foot">served from <code>${origin}</code></div>
+  </div>
+</body></html>`;
 }
 
 function notFoundPage() {
