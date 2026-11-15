@@ -663,15 +663,16 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   }
   .brand::before { content: '♪ '; color: var(--aqua-pink); }
 
-  /* Speed row */
-  .speed-row {
+  /* Sub-controls row (local-only: mute, volume, speed) */
+  .sub-controls {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
     padding: 2px 8px 10px;
     flex-wrap: wrap;
   }
+  .divider { opacity: 0.3; font-weight: 700; }
   .speed-label {
     font-size: 10px;
     font-weight: 700;
@@ -679,7 +680,6 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     opacity: 0.6;
     letter-spacing: 1px;
     text-transform: uppercase;
-    margin-right: 4px;
   }
   .speed-btn {
     padding: 4px 10px;
@@ -696,6 +696,22 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     background: linear-gradient(180deg, #d9ffe6, #4dd680 70%, #1a8e4a);
     color: #fff;
     text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  }
+  .ctrl.small { width: 32px; height: 32px; font-size: 12px; }
+  .ctrl.danger {
+    background: radial-gradient(circle at 50% 25%, #ffcfcf, #e85c5c 55%, #b02020);
+    color: #fff;
+  }
+
+  .bot-status-row {
+    text-align: center;
+    padding: 4px 8px 10px;
+  }
+  #bot-status {
+    font-size: 11px;
+    color: var(--green-dark, #1a8e4a);
+    font-weight: 600;
+    opacity: 0.8;
   }
 
   /* Visualizer bars under disc */
@@ -855,23 +871,29 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     </div>
 
     <div class="controls">
-      <button class="ctrl" id="back10" title="Back 10s">⏪</button>
-      <button class="ctrl primary" id="playpause" title="Play/Pause">⏸</button>
-      <button class="ctrl" id="fwd10" title="Forward 10s">⏩</button>
-      <button class="ctrl" id="mute" title="Mute / Unmute">🔇</button>
+      <button class="ctrl" id="bot-shuffle" title="Shuffle queue (bot)">🔀</button>
+      <button class="ctrl primary" id="playpause" title="Pause / Resume (bot)">⏸</button>
+      <button class="ctrl" id="bot-skip" title="Skip song (bot)">⏭</button>
+      <button class="ctrl" id="bot-loop" title="Toggle loop (bot)">🔁</button>
+      <button class="ctrl danger" id="bot-stop" title="Stop & leave (bot)">⏹</button>
+    </div>
+
+    <div class="sub-controls">
+      <button class="ctrl small" id="mute" title="Mute local playback (just you)">🔇</button>
       <div class="vol-wrap">
         <span id="vol-icon">🔊</span>
         <input type="range" min="0" max="100" value="80" class="vol-slider" id="vol">
       </div>
-    </div>
-
-    <div class="speed-row">
-      <span class="speed-label">Speed</span>
+      <span class="divider">·</span>
+      <span class="speed-label">Speed:</span>
       <button class="speed-btn" data-rate="0.5">0.5×</button>
       <button class="speed-btn active" data-rate="1">1×</button>
-      <button class="speed-btn" data-rate="1.25">1.25×</button>
       <button class="speed-btn" data-rate="1.5">1.5×</button>
       <button class="speed-btn" data-rate="2">2×</button>
+    </div>
+
+    <div class="bot-status-row">
+      <span id="bot-status">🤖 These controls play for everyone in the voice call</span>
     </div>
 
     <div class="actions">
@@ -879,19 +901,6 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       <button class="btn" onclick="navigator.clipboard.writeText('${share}').then(()=>this.textContent='✓ copied')">🔗 Copy link</button>
     </div>
 
-    ${session && guildId ? `
-    <div class="bot-ctrl">
-      <div class="bot-label">🤖 CONTROL THE BOT</div>
-      <div class="bot-buttons">
-        <button class="bot-btn" data-action="pause" title="Pause/Resume">⏯</button>
-        <button class="bot-btn" data-action="skip" title="Skip">⏭</button>
-        <button class="bot-btn" data-action="stop" title="Stop & leave">⏹</button>
-        <button class="bot-btn" data-action="shuffle" title="Shuffle queue">🔀</button>
-        <button class="bot-btn" data-action="loop" title="Toggle loop">🔁</button>
-      </div>
-      <div class="bot-status" id="bot-status"></div>
-    </div>
-    ` : ''}
 
     <div class="footer">
       <span class="brand">kitty discplayer</span>
@@ -948,46 +957,73 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       setInterval(updateProgress, 500);
     }
 
-    // Bot control buttons
+    // ===== BOT control (affects everyone in the voice call) =====
     const GUILD_ID = '${guildId}';
-    document.querySelectorAll('.bot-btn').forEach(b => {
-      b.onclick = async () => {
-        const status = document.getElementById('bot-status');
-        status.textContent = '⏳ sending...';
-        try {
-          const r = await fetch('/control', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ guild_id: GUILD_ID, action: b.dataset.action }),
-          });
-          const j = await r.json();
-          status.textContent = r.ok ? '✓ sent' : ('⚠ ' + (j.error || 'failed'));
-          setTimeout(() => status.textContent = '', 2500);
-        } catch (e) {
-          status.textContent = '⚠ ' + e.message;
-        }
-      };
-    });
+    const DEFAULT_STATUS = '🤖 These controls play for everyone in the voice call';
+    async function botAction(action) {
+      const status = document.getElementById('bot-status');
+      if (!GUILD_ID) { status.textContent = '⚠ no voice session'; return; }
+      status.textContent = '⏳ sending to bot...';
+      try {
+        const r = await fetch('/control', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ guild_id: GUILD_ID, action }),
+        });
+        const j = await r.json();
+        status.textContent = r.ok ? '✓ ' + action + ' sent to bot' : ('⚠ ' + (j.error || 'failed'));
+        setTimeout(() => { status.textContent = DEFAULT_STATUS; }, 2500);
+      } catch (e) {
+        status.textContent = '⚠ ' + e.message;
+      }
+    }
 
-    // Mute toggle
+    // Play/Pause — controls BOT + local iframe
+    document.getElementById('playpause').onclick = async () => {
+      const btn = document.getElementById('playpause');
+      // Mirror locally
+      if (player) {
+        const state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) { player.pauseVideo(); btn.textContent = '▶'; }
+        else { player.playVideo(); btn.textContent = '⏸'; }
+      }
+      // Send to bot
+      await botAction('pause');
+    };
+
+    // Skip — bot only (local iframe would just stop)
+    document.getElementById('bot-skip').onclick = () => botAction('skip');
+
+    // Shuffle — bot only
+    document.getElementById('bot-shuffle').onclick = () => botAction('shuffle');
+
+    // Loop — bot only
+    document.getElementById('bot-loop').onclick = () => botAction('loop');
+
+    // Stop — bot only (also stops local iframe)
+    document.getElementById('bot-stop').onclick = async () => {
+      if (player) player.stopVideo();
+      await botAction('stop');
+    };
+
+    // ===== LOCAL-only controls (just the viewer's browser) =====
     document.getElementById('mute').onclick = () => {
       if (!player) return;
       const btn = document.getElementById('mute');
-      if (player.isMuted()) {
-        player.unMute();
-        btn.textContent = '🔊';
-      } else {
-        player.mute();
-        btn.textContent = '🔇';
-      }
+      if (player.isMuted()) { player.unMute(); btn.textContent = '🔊'; }
+      else { player.mute(); btn.textContent = '🔇'; }
     };
-
-    // Playback speed
+    document.getElementById('vol').oninput = (e) => { if (player) player.setVolume(e.target.value); };
+    document.getElementById('progress').onclick = (e) => {
+      if (!player) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      player.seekTo(pct * player.getDuration(), true);
+    };
     document.querySelectorAll('.speed-btn').forEach(b => {
       b.onclick = () => {
         if (!player) return;
-        const rate = parseFloat(b.dataset.rate);
-        player.setPlaybackRate(rate);
+        player.setPlaybackRate(parseFloat(b.dataset.rate));
         document.querySelectorAll('.speed-btn').forEach(x => x.classList.remove('active'));
         b.classList.add('active');
       };
@@ -1034,23 +1070,6 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       const state = player.getPlayerState();
       if (state === YT.PlayerState.PLAYING) player.pauseVideo();
       else player.playVideo();
-    };
-    document.getElementById('back10').onclick = () => {
-      if (!player) return;
-      player.seekTo(Math.max(0, player.getCurrentTime() - 10), true);
-    };
-    document.getElementById('fwd10').onclick = () => {
-      if (!player) return;
-      player.seekTo(Math.min(player.getDuration(), player.getCurrentTime() + 10), true);
-    };
-    document.getElementById('vol').oninput = (e) => {
-      if (player) player.setVolume(e.target.value);
-    };
-    document.getElementById('progress').onclick = (e) => {
-      if (!player) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const pct = (e.clientX - rect.left) / rect.width;
-      player.seekTo(pct * player.getDuration(), true);
     };
 
     // Load YT API
