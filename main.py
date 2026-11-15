@@ -291,8 +291,11 @@ async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel
     track = player.current
     try:
         cf = await cloudflare_page(track)
-        track._share_url = cf or await shorten_url(track.uri)
-    except: pass
+        track._share_url = cf or await shorten_url(track.uri) or track.uri
+        track._is_webplay = bool(cf)
+    except:
+        track._share_url = track.uri
+        track._is_webplay = False
     prev = getattr(player, "now_playing_msg", None)
     if prev:
         try: await prev.delete()
@@ -301,8 +304,10 @@ async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel
         view = MusicControls(player)
         embed = make_now_playing_embed(player)
         share = getattr(track, "_share_url", None)
+        is_webplay = getattr(track, "_is_webplay", False)
         if share:
-            embed.add_field(name="🔗 Share", value=share, inline=False)
+            label = "🎵 USE OUR WEBPLAY (BETA)" if is_webplay else "🔗 Share"
+            embed.add_field(name=label, value=share, inline=False)
         msg = await channel.send(embed=embed, view=view)
         player.now_playing_msg = msg
         return msg
