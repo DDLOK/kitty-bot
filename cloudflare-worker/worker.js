@@ -108,6 +108,70 @@ export default {
       return htmlPage(renderDashboard(session, playlists, qData, url.origin));
     }
 
+    // ---- Background image proxy (Wikipedia Bliss) — cached forever ----
+    if (url.pathname === '/bg') {
+      const cache = caches.default;
+      const cacheKey = new Request('https://cache.local/bg-bliss', request);
+      let cached = await cache.match(cacheKey);
+      if (cached) return cached;
+      try {
+        const upstream = await fetch('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png', {
+          headers: { 'User-Agent': 'kitty-discplayer/1.0' },
+        });
+        if (!upstream.ok) {
+          // Fallback to commons
+          const fb = await fetch('https://upload.wikimedia.org/wikipedia/commons/8/8d/Bliss_%28Windows_XP%29.png', {
+            headers: { 'User-Agent': 'kitty-discplayer/1.0' },
+          });
+          if (!fb.ok) return new Response('', { status: 502 });
+          const img = await fb.arrayBuffer();
+          const resp = new Response(img, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' } });
+          await cache.put(cacheKey, resp.clone());
+          return resp;
+        }
+        const img = await upstream.arrayBuffer();
+        const resp = new Response(img, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable' } });
+        await cache.put(cacheKey, resp.clone());
+        return resp;
+      } catch (e) { return new Response('', { status: 502 }); }
+    }
+
+    // ---- Bot control endpoint (web → worker queue → bot) ----
+    if (request.method === 'POST' && url.pathname === '/control') {
+      const session = await getSession(request, env);
+      if (!session) return json({ error: 'not logged in' }, 401);
+      let data;
+      try { data = await request.json(); } catch { return json({ error: 'bad json' }, 400); }
+      const { guild_id, action, value } = data;
+      if (!guild_id || !action) return json({ error: 'guild_id + action required' }, 400);
+      const cmd = {
+        id: randId(8),
+        guild_id: String(guild_id),
+        user_id: session.id,
+        action, value,
+        created_at: Date.now(),
+      };
+      // Append to pending queue (overwrites if same id — fine, random)
+      await env.SONGS.put(`cmd:${cmd.id}`, JSON.stringify(cmd), { expirationTtl: 60 });
+      return json({ ok: true, id: cmd.id });
+    }
+
+    // ---- Bot pending commands drain ----
+    if (url.pathname === '/pending') {
+      const auth = request.headers.get('Authorization');
+      if (auth !== `Bearer ${env.SECRET}`) return new Response('unauthorized', { status: 401 });
+      const list = await env.SONGS.list({ prefix: 'cmd:' });
+      const commands = [];
+      for (const key of list.keys) {
+        const raw = await env.SONGS.get(key.name);
+        if (raw) {
+          commands.push(JSON.parse(raw));
+          await env.SONGS.delete(key.name);
+        }
+      }
+      return json({ commands });
+    }
+
     if (url.pathname === '/') return htmlPage(landingPage(url.origin));
     return new Response('404', { status: 404 });
   },
@@ -250,6 +314,7 @@ function renderPage(song, id, origin, session) {
   const searchQ = buildYtSearchQuery(song);
   const userName = session ? esc(session.global_name) : '';
   const userAvatar = session ? esc(session.avatar) : '';
+  const guildId = esc(song.guild_id || '');
 
   return `<!doctype html>
 <html lang="en">
@@ -282,7 +347,7 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   body {
     font-family: 'Segoe UI', 'Frutiger', Tahoma, sans-serif;
     background:
-      url('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png') center/cover no-repeat,
+      url('/bg') center/cover no-repeat,
       linear-gradient(180deg, #4a95e8 0%, #7bc96f 60%, #4e9c38 100%);
     background-attachment: fixed;
     min-height: 100vh;
@@ -663,6 +728,55 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     50% { transform: scaleY(1); }
   }
 
+  /* Bot control row */
+  .bot-ctrl {
+    margin: 10px 8px 4px;
+    padding: 10px 14px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.7), rgba(220,255,230,0.4));
+    border: 1px solid rgba(50,180,100,0.5);
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .bot-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--green-dark, #1a8e4a);
+    text-align: center;
+    margin-bottom: 8px;
+    opacity: 0.8;
+  }
+  .bot-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+  .bot-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,60,30,0.5);
+    background: radial-gradient(circle at 50% 25%, #d9ffe6, #4dd680 55%, #0a6633);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.6),
+      inset 0 -2px 2px rgba(0,60,30,0.3),
+      0 2px 6px rgba(50,180,100,0.4);
+    transition: transform 0.1s;
+  }
+  .bot-btn:hover { transform: translateY(-1px); }
+  .bot-btn:active { transform: translateY(1px); }
+  .bot-status {
+    text-align: center;
+    font-size: 10px;
+    min-height: 14px;
+    margin-top: 6px;
+    color: var(--green-dark);
+    font-weight: 600;
+  }
+
   /* User bar */
   .user-bar {
     position: absolute;
@@ -766,6 +880,20 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       <button class="btn" onclick="navigator.clipboard.writeText('${share}').then(()=>this.textContent='✓ copied')">🔗 Copy link</button>
     </div>
 
+    ${session && guildId ? `
+    <div class="bot-ctrl">
+      <div class="bot-label">🤖 CONTROL THE BOT</div>
+      <div class="bot-buttons">
+        <button class="bot-btn" data-action="pause" title="Pause/Resume">⏯</button>
+        <button class="bot-btn" data-action="skip" title="Skip">⏭</button>
+        <button class="bot-btn" data-action="stop" title="Stop & leave">⏹</button>
+        <button class="bot-btn" data-action="shuffle" title="Shuffle queue">🔀</button>
+        <button class="bot-btn" data-action="loop" title="Toggle loop">🔁</button>
+      </div>
+      <div class="bot-status" id="bot-status"></div>
+    </div>
+    ` : ''}
+
     <div class="footer">
       <span class="brand">kitty discplayer</span>
       <span class="share">${share}</span>
@@ -820,6 +948,27 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       if (d) document.getElementById('time-tot').textContent = fmt(d);
       setInterval(updateProgress, 500);
     }
+
+    // Bot control buttons
+    const GUILD_ID = '${guildId}';
+    document.querySelectorAll('.bot-btn').forEach(b => {
+      b.onclick = async () => {
+        const status = document.getElementById('bot-status');
+        status.textContent = '⏳ sending...';
+        try {
+          const r = await fetch('/control', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ guild_id: GUILD_ID, action: b.dataset.action }),
+          });
+          const j = await r.json();
+          status.textContent = r.ok ? '✓ sent' : ('⚠ ' + (j.error || 'failed'));
+          setTimeout(() => status.textContent = '', 2500);
+        } catch (e) {
+          status.textContent = '⚠ ' + e.message;
+        }
+      };
+    });
 
     // Mute toggle
     document.getElementById('mute').onclick = () => {
@@ -961,7 +1110,7 @@ function renderDashboard(session, playlists, qData, origin) {
   body {
     font-family: 'Segoe UI', Tahoma, sans-serif;
     background:
-      url('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png') center/cover no-repeat,
+      url('/bg') center/cover no-repeat,
       linear-gradient(180deg, #4a95e8 0%, #7bc96f 60%);
     background-attachment: fixed;
     color: var(--text);
@@ -1100,7 +1249,7 @@ function landingPage(origin) {
   body {
     font-family: 'Segoe UI', Tahoma, sans-serif;
     background:
-      url('https://upload.wikimedia.org/wikipedia/en/f/f2/XP_Bliss_authentic.png') center/cover no-repeat,
+      url('/bg') center/cover no-repeat,
       linear-gradient(180deg, #4a95e8 0%, #7bc96f 60%);
     background-attachment: fixed;
     color: #0a2a18;

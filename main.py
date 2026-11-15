@@ -102,6 +102,50 @@ async def bad(ctx, text: str):
 async def on_ready():
     print(f"Ready as {bot.user} — prefix \"{PREFIX}\"")
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{PREFIX}help"))
+    if not hasattr(bot, "_control_loop_started"):
+        bot._control_loop_started = True
+        asyncio.create_task(control_poll_loop())
+
+async def control_poll_loop():
+    """Poll Cloudflare Worker for pending web-control commands every 2s."""
+    while True:
+        await asyncio.sleep(2)
+        if not CF_WORKER_URL or not CF_WORKER_SECRET:
+            continue
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(
+                    f"{CF_WORKER_URL}/pending",
+                    headers={"Authorization": f"Bearer {CF_WORKER_SECRET}"},
+                ) as r:
+                    if r.status != 200: continue
+                    j = await r.json()
+                    for cmd in j.get("commands", []):
+                        try:
+                            await handle_web_command(cmd)
+                        except Exception as e:
+                            print(f"web cmd error: {e}")
+        except Exception as e:
+            print(f"control poll error: {e}")
+
+async def handle_web_command(cmd: dict):
+    guild_id = int(cmd["guild_id"])
+    guild = bot.get_guild(guild_id)
+    if not guild: return
+    player: Optional[wavelink.Player] = guild.voice_client
+    if not player: return
+    action = cmd["action"]
+    if action == "pause":
+        await player.pause(not player.paused)
+    elif action == "skip":
+        await player.skip(force=True)
+    elif action == "stop":
+        player.queue.clear()
+        await player.disconnect()
+    elif action == "shuffle":
+        if len(player.queue) >= 2: player.queue.shuffle()
+    elif action == "loop":
+        player.queue.mode = wavelink.QueueMode.loop_all if player.queue.mode != wavelink.QueueMode.loop_all else wavelink.QueueMode.normal
 
 @bot.event
 async def on_wavelink_node_ready(payload: wavelink.NodeReadyEventPayload):
@@ -256,7 +300,7 @@ async def cf_sync(user_id: int, **fields):
     except Exception as e:
         print(f"cf_sync error: {e}")
 
-async def cloudflare_page(track) -> Optional[str]:
+async def cloudflare_page(track, guild_id: Optional[int] = None) -> Optional[str]:
     """POST song to the user's Cloudflare Worker, return shareable URL."""
     if not CF_WORKER_URL or not CF_WORKER_SECRET:
         return None
@@ -267,6 +311,7 @@ async def cloudflare_page(track) -> Optional[str]:
         "thumbnail": track.artwork,
         "duration_ms": track.length,
         "requested_by": getattr(track, "requested_by", ""),
+        "guild_id": str(guild_id) if guild_id else "",
     }
     try:
         async with aiohttp.ClientSession() as s:
@@ -304,7 +349,8 @@ async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel
     # Generate a FRESH share URL every panel send — one-time links don't persist
     track = player.current
     try:
-        cf = await cloudflare_page(track)
+        gid = channel.guild.id if channel and channel.guild else None
+        cf = await cloudflare_page(track, guild_id=gid)
         track._share_url = cf or await shorten_url(track.uri) or track.uri
         track._is_webplay = bool(cf)
     except:
