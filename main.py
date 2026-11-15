@@ -49,43 +49,20 @@ class KittyBot(commands.Bot):
         self.playlists = load_playlists()  # {user_id_str: {playlist_name: [urls...]}}
 
     async def setup_hook(self):
-        # Pool of public Lavalink v4 nodes
-        BLACKLISTED = {"lava-v4.ajieblogs.eu.org"}
-        BACKUPS = [
-            ("https://lavalinkv4.serenetia.com:443", "https://dsc.gg/ajidevserver"),
-            ("https://lavalink.oryzen.xyz:443", "oryzen.xyz"),
-            ("https://lavahatry4.techbyte.host:443", "NAIGLAVA-dash.techbyte.host"),
-            ("https://lavalink.jompo.cloud:2333", "jompo1234"),
-            ("https://pool-us.alfari.id:443", "alfari"),
-        ]
+        # Env-provided node preferred. Fallback: serenetia (last known public).
         nodes = []
-        seen = set()
-        if LAVALINK_URI and not any(b in LAVALINK_URI for b in BLACKLISTED):
+        if LAVALINK_URI:
             nodes.append(wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD))
-            seen.add(LAVALINK_URI)
-        for uri, pw in BACKUPS:
-            if uri not in seen:
-                nodes.append(wavelink.Node(uri=uri, password=pw))
-                seen.add(uri)
+        else:
+            nodes.append(wavelink.Node(
+                uri="https://lavalinkv4.serenetia.com:443",
+                password="https://dsc.gg/ajidevserver",
+            ))
         try:
             await wavelink.Pool.connect(nodes=nodes, client=self, cache_capacity=100)
             print(f"Trying {len(nodes)} Lavalink node(s)...")
         except Exception as e:
             print(f"Lavalink connect failed: {e}")
-        asyncio.create_task(self._reconnect_nodes_loop())
-
-    async def _reconnect_nodes_loop(self):
-        while True:
-            await asyncio.sleep(60)
-            try:
-                connected = [n for n in wavelink.Pool.nodes.values() if n.status.name == "CONNECTED"]
-                if not connected:
-                    print("No Lavalink nodes connected, retrying...")
-                    for n in wavelink.Pool.nodes.values():
-                        try: await n.connect(client=self)
-                        except: pass
-            except Exception as e:
-                print(f"reconnect loop error: {e}")
         # Register slash commands
         if GUILD_ID:
             guild = discord.Object(id=GUILD_ID)
