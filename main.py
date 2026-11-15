@@ -49,23 +49,43 @@ class KittyBot(commands.Bot):
         self.playlists = load_playlists()  # {user_id_str: {playlist_name: [urls...]}}
 
     async def setup_hook(self):
-        # Hardcoded known-working node (serenetia). Env vars are ignored if they
-        # point at the dead ajieblogs node — that one always 404/429s now.
+        # Pool of public Lavalink v4 nodes
         BLACKLISTED = {"lava-v4.ajieblogs.eu.org"}
+        BACKUPS = [
+            ("https://lavalinkv4.serenetia.com:443", "https://dsc.gg/ajidevserver"),
+            ("https://lavalink.oryzen.xyz:443", "oryzen.xyz"),
+            ("https://lavahatry4.techbyte.host:443", "NAIGLAVA-dash.techbyte.host"),
+            ("https://lavalink.jompo.cloud:2333", "jompo1234"),
+            ("https://pool-us.alfari.id:443", "alfari"),
+        ]
         nodes = []
+        seen = set()
         if LAVALINK_URI and not any(b in LAVALINK_URI for b in BLACKLISTED):
             nodes.append(wavelink.Node(uri=LAVALINK_URI, password=LAVALINK_PASSWORD))
-        # Always add serenetia as backup (and primary if env is blacklisted)
-        if not any("serenetia" in (n.uri or "") for n in nodes):
-            nodes.append(wavelink.Node(
-                uri="https://lavalinkv4.serenetia.com:443",
-                password="https://dsc.gg/ajidevserver",
-            ))
+            seen.add(LAVALINK_URI)
+        for uri, pw in BACKUPS:
+            if uri not in seen:
+                nodes.append(wavelink.Node(uri=uri, password=pw))
+                seen.add(uri)
         try:
             await wavelink.Pool.connect(nodes=nodes, client=self, cache_capacity=100)
-            print(f"Connecting to {len(nodes)} Lavalink node(s)...")
+            print(f"Trying {len(nodes)} Lavalink node(s)...")
         except Exception as e:
             print(f"Lavalink connect failed: {e}")
+        asyncio.create_task(self._reconnect_nodes_loop())
+
+    async def _reconnect_nodes_loop(self):
+        while True:
+            await asyncio.sleep(60)
+            try:
+                connected = [n for n in wavelink.Pool.nodes.values() if n.status.name == "CONNECTED"]
+                if not connected:
+                    print("No Lavalink nodes connected, retrying...")
+                    for n in wavelink.Pool.nodes.values():
+                        try: await n.connect(client=self)
+                        except: pass
+            except Exception as e:
+                print(f"reconnect loop error: {e}")
         # Register slash commands
         if GUILD_ID:
             guild = discord.Object(id=GUILD_ID)
