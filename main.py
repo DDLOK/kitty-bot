@@ -239,17 +239,40 @@ class MusicControls(discord.ui.View):
         await interaction.response.defer()
         await self.update_display(interaction)
 
+async def shorten_url(url: str) -> Optional[str]:
+    """Generate a random short URL (is.gd). Returns None on failure."""
+    if not url:
+        return None
+    try:
+        import urllib.parse as up
+        async with aiohttp.ClientSession() as s:
+            async with s.get(f"https://is.gd/create.php?format=simple&url={up.quote(url)}") as r:
+                text = (await r.text()).strip()
+                return text if text.startswith("http") else None
+    except:
+        return None
+
 async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel):
     """Send/refresh the music control panel. Safe to call anywhere."""
     if not player or not player.current or not channel:
         return None
+    # Generate (or reuse cached) short share URL for this track
+    track = player.current
+    if not getattr(track, "_short_url", None):
+        try:
+            track._short_url = await shorten_url(track.uri)
+        except: pass
     prev = getattr(player, "now_playing_msg", None)
     if prev:
         try: await prev.delete()
         except: pass
     try:
         view = MusicControls(player)
-        msg = await channel.send(embed=make_now_playing_embed(player), view=view)
+        embed = make_now_playing_embed(player)
+        short = getattr(track, "_short_url", None)
+        if short:
+            embed.add_field(name="🔗 Share", value=short, inline=False)
+        msg = await channel.send(embed=embed, view=view)
         player.now_playing_msg = msg
         return msg
     except Exception as e:
