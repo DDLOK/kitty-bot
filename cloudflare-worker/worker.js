@@ -239,15 +239,15 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
 <style>
   :root {
     color-scheme: light;
-    --aqua-pink-top: #ffb3e6;
-    --aqua-pink: #ff66cc;
-    --aqua-pink-dark: #cc3399;
-    --chrome-light: #f8f8ff;
-    --chrome-mid: #d0d0e0;
-    --chrome-dark: #808090;
-    --glass: rgba(255, 245, 252, 0.55);
-    --glass-ring: rgba(255, 180, 230, 0.8);
-    --text-dark: #2a1830;
+    --aqua-pink-top: #b8f5c9;
+    --aqua-pink: #4dd680;
+    --aqua-pink-dark: #1a8e4a;
+    --chrome-light: #f8fff8;
+    --chrome-mid: #d0e8d8;
+    --chrome-dark: #80a090;
+    --glass: rgba(240, 255, 245, 0.55);
+    --glass-ring: rgba(120, 220, 160, 0.8);
+    --text-dark: #0a2a18;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -255,9 +255,9 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     font-family: 'Segoe UI', 'Frutiger', Tahoma, sans-serif;
     background:
       radial-gradient(ellipse at 20% 20%, rgba(180, 230, 255, 0.6), transparent 50%),
-      radial-gradient(ellipse at 80% 70%, rgba(255, 180, 230, 0.7), transparent 50%),
-      radial-gradient(ellipse at 50% 100%, rgba(170, 255, 200, 0.4), transparent 60%),
-      linear-gradient(180deg, #a5e3ff 0%, #ffd9f0 50%, #ffeefe 100%);
+      radial-gradient(ellipse at 80% 70%, rgba(170, 240, 190, 0.8), transparent 50%),
+      radial-gradient(ellipse at 50% 100%, rgba(200, 255, 220, 0.6), transparent 60%),
+      linear-gradient(180deg, #a5e3ff 0%, #c8f5d8 50%, #e8fff0 100%);
     background-attachment: fixed;
     min-height: 100vh;
     color: var(--text-dark);
@@ -272,7 +272,7 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     content: '';
     position: fixed;
     border-radius: 50%;
-    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9), rgba(255,180,230,0.2) 60%, transparent);
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.9), rgba(180,240,200,0.3) 60%, transparent);
     pointer-events: none;
     animation: float 12s ease-in-out infinite;
   }
@@ -288,15 +288,15 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     width: 100%;
     max-width: 620px;
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.4) 48%, rgba(255,240,250,0.35) 52%, rgba(255,210,240,0.5) 100%),
+      linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.4) 48%, rgba(240,255,245,0.35) 52%, rgba(200,245,215,0.5) 100%),
       linear-gradient(180deg, var(--aqua-pink-top), var(--aqua-pink));
     border: 1px solid rgba(255,255,255,0.9);
     border-radius: 20px;
     padding: 18px;
     box-shadow:
       inset 0 2px 0 rgba(255,255,255,1),
-      inset 0 -2px 0 rgba(255,100,200,0.4),
-      0 20px 60px rgba(255,102,204,0.35),
+      inset 0 -2px 0 rgba(50,180,100,0.4),
+      0 20px 60px rgba(77,214,128,0.35),
       0 8px 20px rgba(0,0,0,0.15);
     backdrop-filter: blur(20px) saturate(140%);
     overflow: hidden;
@@ -420,7 +420,7 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     height: 100%;
     width: 0%;
     background:
-      linear-gradient(180deg, #ffb3e6 0%, #ff66cc 50%, #cc3399 100%);
+      linear-gradient(180deg, #b8f5c9 0%, #4dd680 50%, #1a8e4a 100%);
     border-radius: 999px;
     transition: width 0.3s linear;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
@@ -467,15 +467,15 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   .ctrl.primary {
     width: 62px; height: 62px;
     background:
-      radial-gradient(circle at 50% 25%, #ffd9f0, #ff66cc 55%, #99266b);
+      radial-gradient(circle at 50% 25%, #d9ffe6, #4dd680 55%, #0a6633);
     color: #fff;
     font-size: 24px;
     text-shadow: 0 1px 1px rgba(0,0,0,0.3);
-    border: 1px solid rgba(100,0,50,0.5);
+    border: 1px solid rgba(0,60,30,0.5);
     box-shadow:
       inset 0 2px 0 rgba(255,255,255,0.7),
-      inset 0 -3px 3px rgba(100,0,50,0.4),
-      0 4px 12px rgba(200,0,100,0.5),
+      inset 0 -3px 3px rgba(0,60,30,0.4),
+      0 4px 12px rgba(50,180,100,0.5),
       0 2px 4px rgba(0,0,0,0.3);
   }
 
@@ -505,16 +505,16 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     -webkit-appearance: none;
     width: 14px; height: 14px;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 30%, #fff, #ff66cc 70%, #cc3399);
-    border: 1px solid rgba(100,0,50,0.5);
+    background: radial-gradient(circle at 50% 30%, #fff, #4dd680 70%, #1a8e4a);
+    border: 1px solid rgba(0,60,30,0.5);
     cursor: pointer;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
   .vol-slider::-moz-range-thumb {
     width: 14px; height: 14px;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 30%, #fff, #ff66cc 70%, #cc3399);
-    border: 1px solid rgba(100,0,50,0.5);
+    background: radial-gradient(circle at 50% 30%, #fff, #4dd680 70%, #1a8e4a);
+    border: 1px solid rgba(0,60,30,0.5);
     cursor: pointer;
   }
 
@@ -533,12 +533,12 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     padding: 7px 14px;
     border-radius: 999px;
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,220,240,0.6));
+      linear-gradient(180deg, rgba(255,255,255,0.85), rgba(220,255,230,0.6));
     color: var(--text-dark);
     text-decoration: none;
     font-weight: 600;
     font-size: 12px;
-    border: 1px solid rgba(255,100,200,0.5);
+    border: 1px solid rgba(50,180,100,0.5);
     cursor: pointer;
     box-shadow:
       inset 0 1px 0 rgba(255,255,255,0.9),
@@ -573,6 +573,35 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
   }
   .brand::before { content: '♪ '; color: var(--aqua-pink); }
 
+  /* Click-for-sound overlay */
+  .sound-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 42, 24, 0.35);
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+    border-radius: 50%;
+    width: 220px; height: 220px;
+    margin: auto;
+    z-index: 3;
+    transition: opacity 0.3s;
+  }
+  .sound-overlay.hidden { opacity: 0; pointer-events: none; }
+  .sound-prompt {
+    text-align: center;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  }
+  .sound-icon { font-size: 44px; margin-bottom: 4px; animation: pulse 1.5s ease-in-out infinite; }
+  .sound-text { font-size: 13px; font-weight: 600; }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+
   /* User bar */
   .user-bar {
     position: absolute;
@@ -582,8 +611,8 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     align-items: center;
     gap: 6px;
     padding: 4px 10px 4px 4px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(255,220,240,0.6));
-    border: 1px solid rgba(255,100,200,0.5);
+    background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(220,255,230,0.6));
+    border: 1px solid rgba(50,180,100,0.5);
     border-radius: 999px;
     font-size: 11px;
     font-weight: 600;
@@ -628,6 +657,12 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
     <div class="disc-wrap">
       <div class="disc" id="disc"></div>
       <div id="yt-player"></div>
+      <div id="sound-overlay" class="sound-overlay">
+        <div class="sound-prompt">
+          <div class="sound-icon">🔊</div>
+          <div class="sound-text">Click for sound</div>
+        </div>
+      </div>
     </div>
 
     <div class="meta">
@@ -681,6 +716,7 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       const config = {
         playerVars: {
           autoplay: 1,
+          mute: 1, // start muted — autoplay requires this in most browsers
           controls: 0,
           disablekb: 1,
           modestbranding: 1,
@@ -697,7 +733,6 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       if (HAS_YT_ID) {
         config.videoId = YT_ID;
       } else {
-        // Fallback: search YouTube for the song, play first result
         config.playerVars.listType = 'search';
         config.playerVars.list = SEARCH_Q;
       }
@@ -710,6 +745,18 @@ ${thumb ? `<meta property="og:image" content="${thumb}">` : ''}
       if (d) document.getElementById('time-tot').textContent = fmt(d);
       setInterval(updateProgress, 500);
     }
+
+    // Click overlay → unmute + hide overlay
+    document.getElementById('sound-overlay').addEventListener('click', () => {
+      if (player && player.unMute) {
+        player.unMute();
+        player.setVolume(80);
+        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
+          player.playVideo();
+        }
+      }
+      document.getElementById('sound-overlay').classList.add('hidden');
+    });
 
     function onStateChange(e) {
       const btn = document.getElementById('playpause');
