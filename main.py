@@ -239,6 +239,37 @@ class MusicControls(discord.ui.View):
         await interaction.response.defer()
         await self.update_display(interaction)
 
+CF_WORKER_URL = os.environ.get("CLOUDFLARE_WORKER_URL", "").rstrip("/")
+CF_WORKER_SECRET = os.environ.get("CLOUDFLARE_WORKER_SECRET", "")
+
+async def cloudflare_page(track) -> Optional[str]:
+    """POST song to the user's Cloudflare Worker, return shareable URL."""
+    if not CF_WORKER_URL or not CF_WORKER_SECRET:
+        return None
+    payload = {
+        "title": track.title,
+        "author": track.author,
+        "uri": track.uri,
+        "thumbnail": track.artwork,
+        "duration_ms": track.length,
+        "requested_by": getattr(track, "requested_by", ""),
+    }
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.post(
+                f"{CF_WORKER_URL}/create",
+                json=payload,
+                headers={"Authorization": f"Bearer {CF_WORKER_SECRET}"},
+            ) as r:
+                if r.status != 200:
+                    print(f"CF worker returned {r.status}")
+                    return None
+                j = await r.json()
+                return j.get("url")
+    except Exception as e:
+        print(f"CF worker error: {e}")
+        return None
+
 async def shorten_url(url: str) -> Optional[str]:
     """Generate a random short URL (is.gd). Returns None on failure."""
     if not url:
@@ -256,11 +287,12 @@ async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel
     """Send/refresh the music control panel. Safe to call anywhere."""
     if not player or not player.current or not channel:
         return None
-    # Generate (or reuse cached) short share URL for this track
+    # Generate (or reuse cached) share URL — prefers Cloudflare Worker, falls back to is.gd
     track = player.current
-    if not getattr(track, "_short_url", None):
+    if not getattr(track, "_share_url", None):
         try:
-            track._short_url = await shorten_url(track.uri)
+            cf = await cloudflare_page(track)
+            track._share_url = cf or await shorten_url(track.uri)
         except: pass
     prev = getattr(player, "now_playing_msg", None)
     if prev:
@@ -269,9 +301,9 @@ async def send_music_panel(player: wavelink.Player, channel: discord.TextChannel
     try:
         view = MusicControls(player)
         embed = make_now_playing_embed(player)
-        short = getattr(track, "_short_url", None)
-        if short:
-            embed.add_field(name="🔗 Share", value=short, inline=False)
+        share = getattr(track, "_share_url", None)
+        if share:
+            embed.add_field(name="🔗 Share", value=share, inline=False)
         msg = await channel.send(embed=embed, view=view)
         player.now_playing_msg = msg
         return msg

@@ -1,0 +1,12 @@
+name = "kitty-songs"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# After running `wrangler kv:namespace create SONGS`, paste the returned id below.
+[[kv_namespaces]]
+binding = "SONGS"
+id = "PASTE_KV_NAMESPACE_ID_HERE"
+
+# Set the auth secret with:
+#   wrangler secret put SECRET
+# (then type any random string when prompted — must match CLOUDFLARE_WORKER_SECRET in bot .env)
