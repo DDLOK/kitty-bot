@@ -882,87 +882,9 @@ async def pat(ctx, member: discord.Member): await _action(ctx, member, "pats", "
 async def bonk(ctx, member: discord.Member): await _action(ctx, member, "bonks", "🔨")
 
 # =============== SLASH COMMANDS (music subset) ===============
-
-@bot.tree.command(name="play", description="Play from YouTube, Spotify, SoundCloud, or search")
-@app_commands.describe(query="URL or search terms")
-async def slash_play(interaction: discord.Interaction, query: str):
-    await interaction.response.defer()
-    # Check nodes first
-    connected = [n for n in wavelink.Pool.nodes.values() if n.status.name == "CONNECTED"]
-    if not connected:
-        return await interaction.followup.send("🎵 all music servers are down right now, try again in a minute.")
-    if not interaction.user.voice:
-        return await interaction.followup.send("join a voice channel first, hun.")
-    channel = interaction.user.voice.channel
-    player: wavelink.Player = interaction.guild.voice_client
-    try:
-        if not player:
-            player = await channel.connect(cls=wavelink.Player, self_deaf=True)
-        elif player.channel != channel:
-            await player.move_to(channel)
-    except wavelink.exceptions.InvalidNodeException:
-        return await interaction.followup.send("🎵 music server just dropped, try again shortly.")
-    player.home_channel = interaction.channel
-
-    try:
-        tracks: wavelink.Search = await wavelink.Playable.search(query)
-        if not tracks:
-            return await interaction.followup.send("nothing found.")
-        if isinstance(tracks, wavelink.Playlist):
-            added = await player.queue.put_wait(tracks)
-            await interaction.followup.send(f"✅ queued **{added}** tracks from **{tracks.name}**")
-            if not player.playing:
-                await player.play(player.queue.get())
-        else:
-            track = tracks[0]
-            if not player.playing:
-                await interaction.followup.send(f"▶️ playing **{track.title}**")
-                await player.play(track)
-            else:
-                await player.queue.put_wait(track)
-                await interaction.followup.send(f"✅ queued **{track.title}**")
-        # Always ensure the music panel is visible after /play
-        await asyncio.sleep(1)
-        await send_music_panel(player, interaction.channel)
-    except Exception as e:
-        print(f"[slash_play] error: {e}")
-        await interaction.followup.send(f"💀 play failed: `{e}`")
-
-@bot.tree.command(name="skip", description="Skip the current song")
-async def slash_skip(interaction: discord.Interaction):
-    player: wavelink.Player = interaction.guild.voice_client
-    if not player: return await interaction.response.send_message("nothing playing.")
-    await player.skip(force=True)
-    await interaction.response.send_message("⏭️ skipped.")
-
-@bot.tree.command(name="stop", description="Stop and leave voice")
-async def slash_stop(interaction: discord.Interaction):
-    player: wavelink.Player = interaction.guild.voice_client
-    if not player: return await interaction.response.send_message("nothing playing.")
-    player.queue.clear()
-    await player.disconnect()
-    await interaction.response.send_message("⏹️ stopped and left.")
-
-@bot.tree.command(name="join", description="Join your voice channel")
-async def slash_join(interaction: discord.Interaction):
-    if not interaction.user.voice:
-        return await interaction.response.send_message("join a voice channel first, hun.")
-    channel = interaction.user.voice.channel
-    player: wavelink.Player = interaction.guild.voice_client
-    if not player:
-        player = await channel.connect(cls=wavelink.Player, self_deaf=True)
-    elif player.channel != channel:
-        await player.move_to(channel)
-    player.home_channel = interaction.channel
-    await interaction.response.send_message(f"👋 joined <#{channel.id}>.")
-
-@bot.tree.command(name="leave", description="Leave the voice channel")
-async def slash_leave(interaction: discord.Interaction):
-    player: wavelink.Player = interaction.guild.voice_client
-    if not player:
-        return await interaction.response.send_message("i'm not in voice.")
-    await player.disconnect()
-    await interaction.response.send_message("👋 left voice.")
+# Note: /play, /skip, /stop, /join, /leave, /queue, /kitty are now provided
+# automatically by the hybrid_command versions of their prefix counterparts.
+# Only the specialized ones (/panel, /back, /playlist group) stay standalone below.
 
 # ===== Playlist slash commands =====
 
@@ -1124,15 +1046,7 @@ async def slash_back(interaction: discord.Interaction):
     await player.play(prev)
     await interaction.response.send_message(f"⏮️ going back to **{prev.title}**")
 
-@bot.tree.command(name="queue", description="Show the queue")
-async def slash_queue(interaction: discord.Interaction):
-    player: wavelink.Player = interaction.guild.voice_client
-    if not player or not player.queue: return await interaction.response.send_message("queue empty.")
-    lines = []
-    if player.current: lines.append(f"🎵 **now:** {player.current.title}")
-    for i, t in enumerate(list(player.queue)[:15], start=1):
-        lines.append(f"**{i}.** {t.title}")
-    await interaction.response.send_message(embed=pink_embed("📋 queue", "\n".join(lines)))
+# /queue is provided by the ]queue hybrid command.
 
 # =============== HTTP HELPER ===============
 
@@ -1391,14 +1305,7 @@ async def kitty_cmd(ctx):
     e.set_footer(text="🐱 awww")
     await ctx.send(embed=e)
 
-@bot.tree.command(name="kitty", description="Send a cute kitten picture")
-async def slash_kitty(interaction: discord.Interaction):
-    import time as _t
-    url = f"https://cataas.com/cat/cute?{_t.time()}"
-    e = pink_embed()
-    e.set_image(url=url)
-    e.set_footer(text="🐱 awww")
-    await interaction.response.send_message(embed=e)
+# /kitty is provided by the ]kitty hybrid command.
 
 @bot.hybrid_command(name="dog")
 async def dog(ctx):
