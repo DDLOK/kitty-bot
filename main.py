@@ -19,6 +19,8 @@ from discord import app_commands
 import wavelink
 from dotenv import load_dotenv
 
+import web_auth
+
 load_dotenv()
 TOKEN = os.environ["DISCORD_TOKEN"]
 GUILD_ID = int(os.environ["GUILD_ID"]) if os.environ.get("GUILD_ID") else None
@@ -49,6 +51,12 @@ class KittyBot(commands.Bot):
         self.playlists = load_playlists()  # {user_id_str: {playlist_name: [urls...]}}
 
     async def setup_hook(self):
+        # Start EZLARP OAuth web server alongside the bot
+        try:
+            self._web_runner = await web_auth.start_web_server()
+        except Exception as e:
+            print(f"EZLARP web server failed to start: {e}")
+
         # Env-provided node preferred. Fallback: serenetia (last known public).
         nodes = []
         if LAVALINK_URI:
